@@ -1,8 +1,8 @@
 # IDE
 .idea/
 
-# Local Claude settings (machine-specific)
-.claude/settings.local.json
+# Claude Code tooling (local dev-only)
+.claude/
 
 # Python
 __pycache__/
