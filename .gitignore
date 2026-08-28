@@ -18,3 +18,7 @@ iot_monitor/data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Office / Word temp files
+~$*
+~WRL*.tmp
