@@ -30,6 +30,9 @@ def iso(ts):
 
 
 # 每个传感器一个随机游走状态，保证曲线连续不跳变
+# 演示模式: 'high' = 超温超湿(>30°C, >70%RH); 'low' = 低温低湿(<15°C, <20%RH); 'normal' = 正常范围
+ALARM_MODE = "normal"
+
 walks = {sid: {"t": random.uniform(22.5, 24.5), "h": random.uniform(42, 52)} for sid in SENSORS}
 
 
@@ -41,10 +44,19 @@ def next_value(sid, hour):
     w = walks[sid]
     t_diurnal = 3.0 * math.sin((hour - 6) / 24 * 2 * math.pi)   # 昼夜温差
     h_diurnal = 8.0 * math.sin((hour + 4) / 24 * 2 * math.pi)
-    w["t"] += random.gauss(0, 0.10) + (23.0 + t_diurnal - w["t"]) * 0.02
-    w["h"] += random.gauss(0, 0.35) + (50.0 + h_diurnal - w["h"]) * 0.02
-    w["t"] = min(31.0, max(16.0, w["t"]))
-    w["h"] = min(71.0, max(28.0, w["h"]))
+    if ALARM_MODE == "high":
+        t_target, h_target = 34.0, 78.0   # 超上限: temp>30, humid>70
+        t_lo, t_hi, h_lo, h_hi = 32.0, 38.0, 72.0, 86.0
+    elif ALARM_MODE == "low":
+        t_target, h_target = 12.0, 15.0   # 低于下限: temp<15, humid<20
+        t_lo, t_hi, h_lo, h_hi = 8.0, 14.0, 8.0, 18.0
+    else:
+        t_target, h_target = 23.0, 50.0
+        t_lo, t_hi, h_lo, h_hi = 16.0, 31.0, 28.0, 71.0
+    w["t"] += random.gauss(0, 0.15) + (t_target + t_diurnal - w["t"]) * 0.02
+    w["h"] += random.gauss(0, 0.45) + (h_target + h_diurnal - w["h"]) * 0.02
+    w["t"] = min(t_hi, max(t_lo, w["t"]))
+    w["h"] = min(h_hi, max(h_lo, w["h"]))
     return round(w["t"], 1), round(w["h"], 1)
 
 
