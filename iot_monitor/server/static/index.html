@@ -200,6 +200,16 @@
     margin-top: 4px; letter-spacing: .03em;
   }
 
+  /* Radial gauges */
+  .gauges { display: flex; gap: 14px; justify-content: center; margin: 6px 0 4px; }
+  .gauge { width: 84px; height: 52px; position: relative; }
+  .gauge canvas { position: absolute; inset: 0; }
+  .gauge-label {
+    position: absolute; bottom: 0; left: 0; right: 0; text-align: center;
+    font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    color: var(--faint); text-transform: uppercase;
+  }
+
   .inst-foot {
     margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hairline);
     display: flex; justify-content: space-between; align-items: center;
@@ -247,6 +257,12 @@
   }
   .field input:focus { border-color: var(--temp); box-shadow: 0 0 0 2px rgba(247,169,59,.18); }
   .field input[type="datetime-local"] { font-size: 12px; }
+  .field select {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--hairline);
+    color: var(--text); font-family: var(--mono); font-size: 14px;
+    padding: 9px 12px; border-radius: 8px; outline: none; cursor: pointer;
+  }
+  .field select:focus { border-color: var(--temp); box-shadow: 0 0 0 2px rgba(247,169,59,.18); }
   .btn {
     font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .06em;
     padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; text-transform: uppercase;
@@ -391,6 +407,12 @@
             <label for="exp-end">To</label>
             <input type="datetime-local" id="exp-end">
           </div>
+          <div class="field">
+            <label for="exp-sensor">Sensor</label>
+            <select id="exp-sensor">
+              <option value="">All sensors</option>
+            </select>
+          </div>
           <button class="btn btn-ghost" id="export-btn">Export CSV</button>
         </div>
         <div class="hint">Download temperature &amp; humidity readings for any date range, for compliance reporting.</div>
@@ -428,7 +450,7 @@
   var healthEl = document.getElementById("health");
   var chart = null;
 
-  var COLORS = { temp: "#F7A93B", humid: "#48C6EA", hairline: "#223142", muted: "#7E93A8", danger: "#F1574B" };
+  var COLORS = { temp: "#F7A93B", humid: "#48C6EA", hairline: "#223142", muted: "#7E93A8", danger: "#F1574B", limitMin: "#5C8DF6" };
   var MONO = '"JetBrains Mono", monospace';
 
   var utcClock = document.getElementById("utc-clock");
@@ -547,16 +569,14 @@
               '<div class="metric-value">' + fmtNum(s.humidity) + '<span class="metric-unit">%RH</span></div>' +
             '</div>' +
           '</div>' +
-          '<div class="rails">' +
-            '<div class="rail ' + (tempAlarm ? "alarm" : "") + '">' +
-              '<div class="rail-track"></div>' +
-              '<div class="rail-needle temp ' + (tempAlarm ? "alarm" : "") + '" style="left:' + needlePos(s.temperature, th.temp_min, th.temp_max) + '%;"></div>' +
-              '<div class="rail-labels"><span>' + fmtNum(th.temp_min) + '</span><span>' + midLabel(th.temp_min, th.temp_max) + '</span><span>' + fmtNum(th.temp_max) + '</span></div>' +
+          '<div class="gauges">' +
+            '<div class="gauge">' +
+              '<canvas class="gauge-canvas" data-key="' + escapeHtml(s.sensor_id) + '_temp" data-value="' + s.temperature + '" data-min="' + th.temp_min + '" data-max="' + th.temp_max + '" data-color="' + (tempAlarm ? COLORS.danger : COLORS.temp) + '"></canvas>' +
+              '<span class="gauge-label">Temp</span>' +
             '</div>' +
-            '<div class="rail ' + (humAlarm ? "alarm" : "") + '">' +
-              '<div class="rail-track"></div>' +
-              '<div class="rail-needle humid ' + (humAlarm ? "alarm" : "") + '" style="left:' + needlePos(s.humidity, th.humidity_min, th.humidity_max) + '%;"></div>' +
-              '<div class="rail-labels"><span>' + fmtNum(th.humidity_min) + '</span><span>' + midLabel(th.humidity_min, th.humidity_max) + '</span><span>' + fmtNum(th.humidity_max) + '</span></div>' +
+            '<div class="gauge">' +
+              '<canvas class="gauge-canvas" data-key="' + escapeHtml(s.sensor_id) + '_hum" data-value="' + s.humidity + '" data-min="' + th.humidity_min + '" data-max="' + th.humidity_max + '" data-color="' + (humAlarm ? COLORS.danger : COLORS.humid) + '"></canvas>' +
+              '<span class="gauge-label">Hum</span>' +
             '</div>' +
           '</div>' +
           '<div class="inst-foot">' +
@@ -564,6 +584,38 @@
           '</div>' +
         '</div>';
     }).join("");
+    renderGauges();
+  }
+
+  // ── Radial gauges ──────────────────────────
+  var gaugeCharts = {};
+
+  function renderGauges() {
+    Object.keys(gaugeCharts).forEach(function (k) { try { gaugeCharts[k].destroy(); } catch (e) {} });
+    gaugeCharts = {};
+    document.querySelectorAll(".gauge-canvas").forEach(function (cv) {
+      var key = cv.dataset.key;
+      var value = parseFloat(cv.dataset.value);
+      var min = parseFloat(cv.dataset.min);
+      var max = parseFloat(cv.dataset.max);
+      var color = cv.dataset.color;
+      var range = (max - min) || 1;
+      var v = Math.min(max, Math.max(min, value));
+      var norm = (v - min) / range * max;
+      gaugeCharts[key] = new Chart(cv, {
+        type: "doughnut",
+        data: { datasets: [{ data: [norm, Math.max(0, max - norm)], backgroundColor: [color, "rgba(24,35,47,0.55)"], borderWidth: 0 }] },
+        options: {
+          rotation: -90,
+          circumference: 180,
+          cutout: "74%",
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 400 },
+          plugins: { legend: { display: false }, tooltip: { enabled: false } }
+        }
+      });
+    });
   }
 
   // ── Chart ──────────────────────────────────
@@ -575,7 +627,9 @@
         { label: "Temperature °C", data: [], borderColor: COLORS.temp, backgroundColor: "rgba(247,169,59,.07)", borderWidth: 2, yAxisID: "y", pointRadius: 0, tension: 0.25, fill: true },
         { label: "Humidity %RH", data: [], borderColor: COLORS.humid, backgroundColor: "rgba(72,198,234,.07)", borderWidth: 2, yAxisID: "y1", pointRadius: 0, tension: 0.25, fill: true },
         { label: "temp_max", data: [], borderColor: COLORS.danger, borderDash: [6, 4], borderWidth: 1, yAxisID: "y", pointRadius: 0 },
-        { label: "humidity_max", data: [], borderColor: COLORS.danger, borderDash: [6, 4], borderWidth: 1, yAxisID: "y1", pointRadius: 0 }
+        { label: "humidity_max", data: [], borderColor: COLORS.danger, borderDash: [6, 4], borderWidth: 1, yAxisID: "y1", pointRadius: 0 },
+        { label: "temp_min", data: [], borderColor: COLORS.limitMin, borderDash: [4, 4], borderWidth: 1, yAxisID: "y", pointRadius: 0 },
+        { label: "humidity_min", data: [], borderColor: COLORS.limitMin, borderDash: [4, 4], borderWidth: 1, yAxisID: "y1", pointRadius: 0 }
       ] },
       options: {
         responsive: true,
@@ -586,6 +640,7 @@
           legend: { display: false },
           tooltip: {
             mode: "index", intersect: false,
+            filter: function (item) { return item.datasetIndex < 2; },
             backgroundColor: "#18232F", borderColor: COLORS.hairline, borderWidth: 1,
             titleFont: { family: MONO, size: 11 }, bodyFont: { family: MONO, size: 11 },
             titleColor: "#7E93A8", bodyColor: "#E8EFF6",
@@ -625,9 +680,12 @@
     if (!chart) return;
     var n = chart.data.labels.length || 1;
     var tMax = chart.data.datasets[2], hMax = chart.data.datasets[3];
+    var tMin = chart.data.datasets[4], hMin = chart.data.datasets[5];
     var filled = function (v) { var o = []; for (var i = 0; i < n; i++) o.push(v); return o; };
     tMax.data = filled(state.thresholds.temp_max);
     hMax.data = filled(state.thresholds.humidity_max);
+    tMin.data = filled(state.thresholds.temp_min);
+    hMin.data = filled(state.thresholds.humidity_min);
     chart.update();
   }
 
@@ -726,10 +784,21 @@
   }
 
   // ── Sensor segmented control ───────────────
+  function updateExportSensorSelect() {
+    var sel = document.getElementById("exp-sensor");
+    var cur = sel.value;
+    var html = '<option value="">All sensors</option>';
+    state.sensorIds.forEach(function (id) {
+      html += '<option value="' + escapeHtml(id) + '"' + (cur === id ? " selected" : "") + '>' + escapeHtml(id) + '</option>';
+    });
+    sel.innerHTML = html;
+  }
+
   function syncSensorSeg() {
     var ids = state.sensors.map(function (s) { return s.sensor_id; });
     if (ids.join() === state.sensorIds.join()) return;
     state.sensorIds = ids;
+    updateExportSensorSelect();
     var html = '<button data-mode="all" class="' + (state.mode === "all" ? "active" : "") + '">All</button>';
     ids.forEach(function (id) {
       html += '<button data-mode="' + escapeHtml(id) + '" class="' + (state.mode === id ? "active" : "") + '">' + escapeHtml(id) + '</button>';
@@ -746,6 +815,8 @@
 
   // ── Threshold form ─────────────────────────
   function updateThresholdForm() {
+    var ids = ["t-min", "t-max", "h-min", "h-max"];
+    if (ids.indexOf(document.activeElement.id) !== -1) return;  // 正在编辑时不被轮询覆盖
     document.getElementById("t-min").value = state.thresholds.temp_min;
     document.getElementById("t-max").value = state.thresholds.temp_max;
     document.getElementById("h-min").value = state.thresholds.humidity_min;
@@ -787,6 +858,8 @@
       var qs = new URLSearchParams();
       if (start) qs.set("start", start);
       if (end) qs.set("end", end);
+      var sensor = document.getElementById("exp-sensor").value;
+      if (sensor) qs.set("sensor_id", sensor);
       var url = "/api/history.csv?" + qs.toString();
       var a = document.createElement("a");
       a.href = url;

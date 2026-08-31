@@ -13,7 +13,9 @@ venv/
 
 # Runtime data
 iot_monitor/data/
+iot_monitor/server/data/
 *.csv
+*.db
 
 # OS
 .DS_Store
