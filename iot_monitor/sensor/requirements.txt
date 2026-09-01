@@ -1,0 +1,5 @@
+# Raspberry Pi sensor collector dependencies
+# Install on the Pi:  pip3 install -r requirements.txt
+# System package needed for the DHT22 library:  sudo apt install libgpiod2
+adafruit-circuitpython-dht
+adafruit-blinka

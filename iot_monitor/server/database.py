@@ -70,13 +70,12 @@ def insert_reading(sensor_id, temperature, humidity, ts=None):
 
 
 def get_latest():
-    """Latest reading per sensor."""
+    """Latest reading per sensor (one row per sensor, by newest insert)."""
     with _connect() as conn:
         rows = conn.execute(
             """SELECT r.sensor_id, r.temperature, r.humidity, r.ts
                FROM readings r
-               JOIN (SELECT sensor_id, MAX(ts) AS mts FROM readings GROUP BY sensor_id) m
-                 ON r.sensor_id = m.sensor_id AND r.ts = m.mts
+               WHERE r.id IN (SELECT MAX(id) FROM readings GROUP BY sensor_id)
                ORDER BY r.sensor_id;"""
         ).fetchall()
     return [dict(r) for r in rows]

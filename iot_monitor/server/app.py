@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request, Response
 
 import config
 import database
+import alerts
 
 app = Flask(__name__, static_folder="static")
 _csv_lock = threading.Lock()
@@ -67,7 +68,8 @@ def reading():
 
     ts = database.insert_reading(sensor_id, temperature, humidity, data.get("ts"))
     _append_csv(sensor_id, temperature, humidity, ts)
-    return jsonify({"ok": True, "ts": ts})
+    alerted = alerts.handle_reading(sensor_id, temperature, humidity)
+    return jsonify({"ok": True, "ts": ts, "alerted": alerted})
 
 
 @app.route("/api/latest")
