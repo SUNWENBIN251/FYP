@@ -299,6 +299,50 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+  /* Alert history */
+  .alert-table { width:100%; border-collapse:collapse; font-size:13px; font-family:var(--mono); }
+  .alert-table th { text-align:left; color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.5px; padding:6px 10px; border-bottom:1px solid var(--hairline); }
+  .alert-table td { padding:6px 10px; border-bottom:1px solid var(--hairline); color:var(--text); }
+  .alert-table tr.al td:nth-child(3) { color:var(--danger); font-weight:600; }
+  .alert-table tr.rec td:nth-child(3) { color:var(--ok); font-weight:600; }
+  .alert-table td.empty { color:var(--faint); text-align:center; padding:14px; }
+  .alert-table-wrap { max-height:260px; overflow-y:auto; }
+
+  /* Trend badges (direction of travel in words, not just a chart) */
+  .trend-badge { display:inline-block; margin-top:6px; padding:2px 8px; border-radius:4px;
+    font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.3px; }
+  .trend-badge.up   { color:var(--temp);  background:rgba(247,169,59,.12); }
+  .trend-badge.down { color:var(--humid); background:rgba(72,198,234,.12); }
+  .trend-badge.flat { color:var(--muted); background:rgba(126,147,168,.12); }
+
+  .trend-summary { font-size:14px; line-height:1.75; color:var(--text); }
+  .trend-summary b { font-family:var(--mono); color:var(--text); }
+  .trend-summary .up { color:var(--temp); font-weight:600; }
+  .trend-summary .down { color:var(--humid); font-weight:600; }
+  .trend-summary .flat { color:var(--muted); font-weight:600; }
+
+  /* History browser */
+  .hist-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+  .hist-controls .field { flex:0 0 auto; }
+  .hist-summary { margin:14px 0 10px; font-family:var(--mono); font-size:12.5px;
+    color:var(--muted); line-height:1.7; }
+  .hist-summary b { color:var(--text); }
+  .hist-table { width:100%; border-collapse:collapse; font-size:12.5px; font-family:var(--mono); }
+  .hist-table th { text-align:left; color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.5px; padding:6px 10px;
+    border-bottom:1px solid var(--hairline); position:sticky; top:0; background:var(--panel); }
+  .hist-table td { padding:6px 10px; border-bottom:1px solid var(--hairline); color:var(--text); }
+  .hist-table td.num { text-align:right; }
+  .hist-table tr:hover td { background:rgba(255,255,255,.02); }
+  .hist-table td.empty { color:var(--faint); text-align:center; padding:16px; }
+  .hist-wrap { max-height:420px; overflow:auto; }
+  .pager { display:flex; align-items:center; gap:14px; margin-top:12px; font-size:12px; color:var(--muted); }
+  .pager button { padding:5px 12px; }
+  .seg-toggle { display:inline-flex; border:1px solid var(--hairline); border-radius:6px; overflow:hidden; }
+  .seg-toggle button { background:transparent; border:0; color:var(--muted); padding:6px 14px;
+    font-size:12px; cursor:pointer; }
+  .seg-toggle button.active { background:var(--panel-2); color:var(--text); }
 </style>
 </head>
 <body>
@@ -342,6 +386,12 @@
 
   <!-- Instruments -->
   <div id="instruments" class="instruments"></div>
+
+  <!-- Trend summary: direction of travel described in words -->
+  <section class="panel" style="margin-bottom:20px;">
+    <div class="panel-title"><span class="tick">&#8599;</span> Trend Summary</div>
+    <div class="trend-summary" id="trend-summary">Awaiting sensor data.</div>
+  </section>
 
   <!-- Trend chart -->
   <section class="panel" style="margin-bottom:20px;">
@@ -419,6 +469,63 @@
       </section>
     </div>
   </div>
+
+  <!-- Alert history -->
+  <section class="panel" style="margin-top:20px;">
+    <div class="panel-title"><span class="tick danger">&#10005;</span> Alert History</div>
+    <div class="alert-table-wrap">
+      <table class="alert-table">
+        <thead><tr><th>Time</th><th>Sensor</th><th>Type</th><th>Condition</th><th>Reading</th><th>Limit</th></tr></thead>
+        <tbody id="alert-body">
+          <tr><td colspan="6" class="empty">No alerts recorded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint">Every threshold crossing and recovery is logged here and exported for batch analysis.</div>
+  </section>
+
+  <!-- History browser -->
+  <section class="panel" style="margin-top:20px;">
+    <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span><span class="tick humid">&#8801;</span> History</span>
+      <div class="seg-toggle" id="hist-mode">
+        <button data-mode="rows" class="active">Readings</button>
+        <button data-mode="daily">Daily Summary</button>
+      </div>
+    </div>
+
+    <div class="hist-controls">
+      <div class="field">
+        <label for="hist-start">From</label>
+        <input type="datetime-local" id="hist-start">
+      </div>
+      <div class="field">
+        <label for="hist-end">To</label>
+        <input type="datetime-local" id="hist-end">
+      </div>
+      <div class="field">
+        <label for="hist-sensor">Sensor</label>
+        <select id="hist-sensor"><option value="">All sensors</option></select>
+      </div>
+      <button class="btn btn-primary" id="hist-load">Load</button>
+    </div>
+
+    <div class="hist-summary" id="hist-summary">Pick a date range and press Load.</div>
+
+    <div class="hist-wrap">
+      <table class="hist-table">
+        <thead id="hist-head"></thead>
+        <tbody id="hist-body"><tr><td class="empty">No data loaded.</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="pager" id="hist-pager" style="display:none;">
+      <button class="btn btn-ghost" id="hist-prev">&#8592; Prev</button>
+      <span id="hist-pageinfo">—</span>
+      <button class="btn btn-ghost" id="hist-next">Next &#8594;</button>
+    </div>
+    <div class="hint">Browse every stored reading for any period, and see per-day summaries.</div>
+  </section>
 
   <footer>
     DHT22 · Raspberry Pi · Flask + SQLite · Spark + Hive &nbsp;—&nbsp; monitored continuously, 1-minute cadence
@@ -542,6 +649,58 @@
   }
 
   // ── Instruments ────────────────────────────
+  // ── Trend helpers (describe change in words) ──
+  function trendWindowLabel(minutes) {
+    if (minutes >= 60) {
+      var h = minutes / 60;
+      return h + " hour" + (h === 1 ? "" : "s");
+    }
+    return minutes + " minutes";
+  }
+
+  function trendBadge(trend, key, unit) {
+    if (!trend || trend[key] === null || trend[key] === undefined) {
+      return '<div class="trend-badge flat">&mdash; no baseline</div>';
+    }
+    var d = trend[key], a = Math.abs(d);
+    var cls = a < 0.3 ? "flat" : (d > 0 ? "up" : "down");
+    var arrow = a < 0.3 ? "&#8594;" : (d > 0 ? "&#9650;" : "&#9660;");
+    var sign = d > 0 ? "+" : "";
+    return '<div class="trend-badge ' + cls + '">' + arrow + " " + sign +
+           d.toFixed(1) + " " + unit + "</div>";
+  }
+
+  function describeDelta(delta, what, unit) {
+    var a = Math.abs(delta);
+    if (a < 0.3) return '<span class="flat">' + what + " is steady</span>";
+    var dir = delta > 0 ? "rising" : "falling";
+    var pace = a >= 2 ? "quickly" : (a >= 0.8 ? "steadily" : "slightly");
+    var cls = delta > 0 ? "up" : "down";
+    var sign = delta > 0 ? "+" : "";
+    return '<span class="' + cls + '">' + what + " is " + dir + " " + pace +
+           " (" + sign + delta.toFixed(1) + " " + unit + ")</span>";
+  }
+
+  function renderTrendSummary() {
+    var el = document.getElementById("trend-summary");
+    if (!el) return;
+    var parts = [];
+    state.sensors.forEach(function (s) {
+      if (!s.trend) return;
+      parts.push("<b>" + escapeHtml(s.sensor_id) + "</b> over the last " +
+                 trendWindowLabel(s.trend.minutes) + ": " +
+                 describeDelta(s.trend.dt, "temperature", "&deg;C") + ", " +
+                 describeDelta(s.trend.dh, "humidity", "%RH") + ".");
+    });
+    if (!parts.length) {
+      el.textContent = state.sensors.length
+        ? "Not enough history yet to describe a trend (readings must span the window)."
+        : "Awaiting sensor data.";
+      return;
+    }
+    el.innerHTML = parts.join("<br>");
+  }
+
   function renderReadouts() {
     if (!state.sensors.length) {
       readoutsEl.innerHTML = '<div class="panel empty-state">Awaiting sensor data…</div>';
@@ -563,10 +722,12 @@
             '<div class="metric temperature ' + (tempAlarm ? "alarm" : "") + '">' +
               '<div class="metric-label">Temperature</div>' +
               '<div class="metric-value">' + fmtNum(s.temperature) + '<span class="metric-unit">°C</span></div>' +
+              trendBadge(s.trend, "dt", "&deg;C/h") +
             '</div>' +
             '<div class="metric humidity ' + (humAlarm ? "alarm" : "") + '">' +
               '<div class="metric-label">Humidity</div>' +
               '<div class="metric-value">' + fmtNum(s.humidity) + '<span class="metric-unit">%RH</span></div>' +
+              trendBadge(s.trend, "dh", "%RH/h") +
             '</div>' +
           '</div>' +
           '<div class="gauges">' +
@@ -740,6 +901,7 @@
         syncSensorSeg();
         renderHealth();
         renderReadouts();
+        renderTrendSummary();
         updateThresholdForm();
         pushLive(data.trend_points || []);
         state.lastUpdate = data.server_time || new Date().toISOString();
@@ -783,13 +945,168 @@
       .catch(function () {});
   }
 
+  // ── Alert history ──────────────────────────
+  function loadAlerts() {
+    return fetch("/api/alerts?limit=25", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (data) { renderAlerts(data.alerts || []); })
+      .catch(function () {});
+  }
+
+  function renderAlerts(list) {
+    var body = document.getElementById("alert-body");
+    if (!body) return;
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">No alerts recorded yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(function (a) {
+      var cond = String(a.condition || "").replace(/_/g, " ").toUpperCase();
+      var isRec = a.kind === "recovery";
+      var val = (a.value === null || a.value === undefined) ? "--" : Number(a.value).toFixed(1);
+      var lim = (a.threshold === null || a.threshold === undefined) ? "--" : Number(a.threshold).toFixed(1);
+      return '<tr class="' + (isRec ? "rec" : "al") + '">' +
+        '<td>' + escapeHtml(fmtDateLocal(a.ts)) + '</td>' +
+        '<td>' + escapeHtml(a.sensor_id) + '</td>' +
+        '<td>' + (isRec ? "RECOVERED" : "ALERT") + '</td>' +
+        '<td>' + escapeHtml(cond) + '</td>' +
+        '<td>' + val + '</td><td>' + lim + '</td></tr>';
+    }).join("");
+  }
+
+  // ── History browser ────────────────────────
+  var hist = { mode: "rows", limit: 50, offset: 0, total: 0 };
+
+  function histQuery() {
+    var qs = new URLSearchParams();
+    var s = document.getElementById("hist-start").value;
+    var e = document.getElementById("hist-end").value;
+    if (s) qs.set("start", s);
+    if (e) qs.set("end", e);
+    var sen = document.getElementById("hist-sensor").value;
+    if (sen) qs.set("sensor_id", sen);
+    return qs;
+  }
+
+  function loadHistory() { hist.offset = 0; fetchHistory(); }
+
+  function fetchHistory() {
+    var summaryEl = document.getElementById("hist-summary");
+    var qs = histQuery();
+
+    if (hist.mode === "daily") {
+      document.getElementById("hist-pager").style.display = "none";
+      fetch("/api/daily?" + qs.toString(), { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (d) { renderDaily(d.days || []); })
+        .catch(function () { summaryEl.textContent = "Could not load data."; });
+      return;
+    }
+
+    qs.set("limit", hist.limit);
+    qs.set("offset", hist.offset);
+    fetch("/api/readings?" + qs.toString(), { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        hist.total = d.total || 0;
+        renderRows(d.rows || []);
+        renderHistSummary(d.summary || {}, hist.total);
+        renderPager();
+      })
+      .catch(function () { summaryEl.textContent = "Could not load data."; });
+  }
+
+  function renderHistSummary(s, total) {
+    var el = document.getElementById("hist-summary");
+    if (!total) { el.textContent = "No readings in this range."; return; }
+    el.innerHTML = "<b>" + total.toLocaleString() + "</b> readings &nbsp;|&nbsp; " +
+      "temperature <b>" + fmtNum(s.t_min) + "</b>&ndash;<b>" + fmtNum(s.t_max) +
+      "</b> &deg;C (avg <b>" + fmtNum(s.t_avg) + "</b>) &nbsp;|&nbsp; " +
+      "humidity <b>" + fmtNum(s.h_min) + "</b>&ndash;<b>" + fmtNum(s.h_max) +
+      "</b> %RH (avg <b>" + fmtNum(s.h_avg) + "</b>)";
+  }
+
+  function renderRows(rows) {
+    document.getElementById("hist-head").innerHTML =
+      "<tr><th>Time (UTC)</th><th>Sensor</th><th>Temperature</th><th>Humidity</th></tr>";
+    var body = document.getElementById("hist-body");
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">No rows in this range.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function (r) {
+      return "<tr><td>" + escapeHtml(r.ts) + "</td><td>" + escapeHtml(r.sensor_id) +
+        '</td><td class="num">' + fmtNum(r.temperature) + '</td><td class="num">' +
+        fmtNum(r.humidity) + "</td></tr>";
+    }).join("");
+  }
+
+  function renderDaily(days) {
+    document.getElementById("hist-head").innerHTML =
+      "<tr><th>Day (UTC)</th><th>Sensor</th><th>Readings</th>" +
+      "<th>Temp min</th><th>Temp avg</th><th>Temp max</th>" +
+      "<th>Hum min</th><th>Hum avg</th><th>Hum max</th></tr>";
+    var body = document.getElementById("hist-body");
+    document.getElementById("hist-summary").textContent =
+      days.length ? (days.length + " day/sensor rows") : "No data in this range.";
+    if (!days.length) {
+      body.innerHTML = '<tr><td colspan="9" class="empty">No data.</td></tr>';
+      return;
+    }
+    body.innerHTML = days.map(function (d) {
+      return "<tr><td>" + escapeHtml(d.day) + "</td><td>" + escapeHtml(d.sensor_id) +
+        '</td><td class="num">' + d.n + '</td>' +
+        '<td class="num">' + fmtNum(d.t_min) + '</td><td class="num">' + fmtNum(d.t_avg) +
+        '</td><td class="num">' + fmtNum(d.t_max) + '</td>' +
+        '<td class="num">' + fmtNum(d.h_min) + '</td><td class="num">' + fmtNum(d.h_avg) +
+        '</td><td class="num">' + fmtNum(d.h_max) + "</td></tr>";
+    }).join("");
+  }
+
+  function renderPager() {
+    var pager = document.getElementById("hist-pager");
+    if (!hist.total) { pager.style.display = "none"; return; }
+    pager.style.display = "flex";
+    var page = Math.floor(hist.offset / hist.limit) + 1;
+    var pages = Math.max(1, Math.ceil(hist.total / hist.limit));
+    document.getElementById("hist-pageinfo").textContent = "Page " + page + " / " + pages;
+    document.getElementById("hist-prev").disabled = hist.offset <= 0;
+    document.getElementById("hist-next").disabled = hist.offset + hist.limit >= hist.total;
+  }
+
+  function bindHistory() {
+    document.getElementById("hist-load").addEventListener("click", loadHistory);
+    document.getElementById("hist-prev").addEventListener("click", function () {
+      hist.offset = Math.max(0, hist.offset - hist.limit); fetchHistory();
+    });
+    document.getElementById("hist-next").addEventListener("click", function () {
+      hist.offset += hist.limit; fetchHistory();
+    });
+    var seg = document.getElementById("hist-mode");
+    seg.addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("button") : null;
+      if (!b) return;
+      hist.mode = b.getAttribute("data-mode");
+      Array.prototype.forEach.call(seg.querySelectorAll("button"), function (x) {
+        x.classList.toggle("active", x === b);
+      });
+      fetchHistory();
+    });
+  }
+
   // ── Sensor segmented control ───────────────
   function updateExportSensorSelect() {
-    var sel = document.getElementById("exp-sensor");
+    fillSensorSelect("exp-sensor");
+    fillSensorSelect("hist-sensor");
+  }
+
+  function fillSensorSelect(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
     var cur = sel.value;
     var html = '<option value="">All sensors</option>';
-    state.sensorIds.forEach(function (id) {
-      html += '<option value="' + escapeHtml(id) + '"' + (cur === id ? " selected" : "") + '>' + escapeHtml(id) + '</option>';
+    state.sensorIds.forEach(function (sid) {
+      html += '<option value="' + escapeHtml(sid) + '"' + (cur === sid ? " selected" : "") + '>' + escapeHtml(sid) + '</option>';
     });
     sel.innerHTML = html;
   }
@@ -875,18 +1192,32 @@
   buildChart();
   bindThresholds();
   bindExport();
+  bindHistory();
 
   loadTrend();
   loadThresholds();
   loadLatest();
+  loadAlerts();
   setInterval(loadLatest, POLL_MS);
+  setInterval(loadAlerts, 10000);
 
   (function () {
     var d = new Date();
-    document.getElementById("exp-start").value = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T00:00";
+    var ymd = function (dt) {
+      return dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate());
+    };
+    document.getElementById("exp-start").value = ymd(d) + "T00:00";
     var e = new Date(d.getTime() + 24 * 3600 * 1000);
-    document.getElementById("exp-end").value = e.getFullYear() + "-" + pad(e.getMonth() + 1) + "-" + pad(e.getDate()) + "T00:00";
+    document.getElementById("exp-end").value = ymd(e) + "T00:00";
+
+    // history defaults: the last 7 days up to now
+    var hs = new Date(d.getTime() - 7 * 24 * 3600 * 1000);
+    document.getElementById("hist-start").value = ymd(hs) + "T00:00";
+    document.getElementById("hist-end").value =
+      ymd(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
   })();
+
+  fetchHistory();
 })();
 </script>
 </body>

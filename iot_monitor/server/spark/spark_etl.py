@@ -1,15 +1,25 @@
 # -*- coding: utf-8 -*-
 """Spark ETL (Plan A): read readings.csv, compute hourly aggregates,
-write the result to HDFS so Hive can query it via an external table."""
+write the result to HDFS so Hive can query it via an external table.
+
+Environment variables:
+  CSV_IN    input CSV path/URI (default file:///home/swb/readings.csv)
+  AGG_OUT   HDFS output path    (default hdfs://localhost:9000/iot/agg_hour/)
+"""
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import avg, max as mx, min as mn, count as cnt
 from pyspark.sql.functions import col, date_format, to_timestamp
 from pyspark.sql.types import DoubleType
 
+CSV_IN = os.environ.get("CSV_IN", "file:///home/swb/readings.csv")
+AGG_OUT = os.environ.get("AGG_OUT", "hdfs://localhost:9000/iot/agg_hour/")
+
 spark = SparkSession.builder.appName("iot_etl").getOrCreate()
 
-# 1. read local CSV (copied from backend)
-df = spark.read.option("header", True).csv("file:///home/swb/readings.csv")
+# 1. read the source CSV (path configurable via CSV_IN)
+df = spark.read.option("header", True).csv(CSV_IN)
 
 # 2. rename + cast
 df = (df
@@ -45,8 +55,7 @@ agg.orderBy("hour", "sensor_id").show(8, truncate=False)
 print("agg 总行数:", agg.count())
 
 # 6. write result to HDFS without header (cleaner for Hive external table)
-agg.write.mode("overwrite").csv(
-    "hdfs://localhost:9000/iot/agg_hour/")
-print("已写入 HDFS: /iot/agg_hour/")
+agg.write.mode("overwrite").csv(AGG_OUT)
+print("已写入 HDFS:", AGG_OUT)
 
 spark.stop()

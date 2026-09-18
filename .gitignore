@@ -16,6 +16,8 @@ iot_monitor/data/
 iot_monitor/server/data/
 *.csv
 *.db
+*.log
+derby.log
 
 # OS
 .DS_Store
