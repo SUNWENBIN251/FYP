@@ -35,6 +35,31 @@ CSV_FLUSH_EVERY = 1                 # append each reading to CSV immediately
 BACKUP_INTERVAL_HOURS = 24          # back up the database + CSVs this often (0 = disabled)
 BACKUP_KEEP = 14                    # how many timestamped backups to retain
 
+# ---- batch processing (Spark + Hive) ----
+# The backend exports each batch window to a CSV, hands it to the WSL script
+# below, and reads the JSON result file the script writes back.
+BATCH_DIR = os.path.join(DATA_DIR, "batch")
+BATCH_SCRIPT_MNT = "/mnt/c/Users/1/Desktop/FYP/iot_monitor/spark/batch_run.sh"
+# Runs a Hive query (as an argument) and writes the rows back as TSV
+HIVE_QUERY_SCRIPT_MNT = "/mnt/c/Users/1/Desktop/FYP/iot_monitor/spark/hive_query.sh"
+BATCH_WSL_DISTRO = "Ubuntu"
+BATCH_TIMEOUT_MINUTES = 20          # a running batch older than this is treated as dead
+BATCH_SCHEDULE_MINUTES = 60         # default automatic interval (0 = disabled)
+
+
+def to_mnt(win_path):
+    """C:\\Users\\1\\x -> /mnt/c/Users/1/x, i.e. the path as WSL sees it."""
+    p = os.path.abspath(win_path).replace("\\", "/")
+    if len(p) > 1 and p[1] == ":":
+        p = "/mnt/" + p[0].lower() + p[2:]
+    return p
+
 
 def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(BATCH_DIR, exist_ok=True)
+
+
+def ensure_data_dir():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(BATCH_DIR, exist_ok=True)

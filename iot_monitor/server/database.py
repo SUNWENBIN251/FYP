@@ -76,6 +76,45 @@ def init_db():
                 "VALUES (1, ?, ?, ?, ?)",
                 (t["temp_min"], t["temp_max"], t["humidity_min"], t["humidity_max"]),
             )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS batches (
+                   batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   status TEXT NOT NULL,
+                   ts_from TEXT, ts_to TEXT,
+                   rows_in INTEGER, rows_out INTEGER,
+                   partitions TEXT,
+                   started_at TEXT NOT NULL,
+                   finished_at TEXT,
+                   duration_s REAL,
+                   error TEXT
+               );"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_batches_started ON batches(started_at);")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS batch_state (
+                   id INTEGER PRIMARY KEY CHECK (id = 1),
+                   watermark TEXT,
+                   schedule_enabled INTEGER NOT NULL DEFAULT 0,
+                   schedule_minutes INTEGER NOT NULL DEFAULT 60,
+                   last_scheduled_at TEXT
+               );"""
+        )
+        cur = conn.execute("SELECT id FROM batch_state WHERE id = 1")
+        if cur.fetchone() is None:
+            conn.execute(
+                "INSERT INTO batch_state (id, schedule_enabled, schedule_minutes) VALUES (1, 0, ?)",
+                (getattr(config, "BATCH_SCHEDULE_MINUTES", 60),),
+            )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS batch_windows (
+                   window_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   name TEXT NOT NULL,
+                   ts_from TEXT NOT NULL,
+                   ts_to TEXT NOT NULL,
+                   created_at TEXT NOT NULL
+               );"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_windows_from ON batch_windows(ts_from);")
 
 
 def insert_reading(sensor_id, temperature, humidity, ts=None):
@@ -271,3 +310,260 @@ def reading_at_or_before(ts_iso, sensor_id):
             (sensor_id, ts_iso),
         ).fetchone()
     return dict(row) if row else None
+
+
+# ── batch processing ───────────────────────────────────────────
+def claim_batch(ts_from, ts_to):
+    """Reserve the batch slot, or return None when a batch is already running.
+
+    The single INSERT..SELECT..WHERE NOT EXISTS statement makes the
+    check-and-insert atomic under SQLite's write serialisation, so two callers
+    racing (a manual Run and the scheduler) cannot both claim the slot.
+    """
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO batches (status, ts_from, ts_to, started_at) "
+            "SELECT 'running', ?, ?, ? "
+            "WHERE NOT EXISTS (SELECT 1 FROM batches WHERE status = 'running')",
+            (ts_from, ts_to, _now_iso()),
+        )
+        if cur.rowcount != 1:
+            return None
+        return cur.lastrowid
+
+
+def finish_batch(batch_id, ok, rows_in=None, rows_out=None, partitions=None, error=None):
+    """Close a batch row and stamp its duration."""
+    finished = _now_iso()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT started_at FROM batches WHERE batch_id = ?", (batch_id,)
+        ).fetchone()
+        duration = None
+        if row and row["started_at"]:
+            try:
+                started = datetime.strptime(row["started_at"], "%Y-%m-%dT%H:%M:%SZ")
+                ended = datetime.strptime(finished, "%Y-%m-%dT%H:%M:%SZ")
+                duration = round((ended - started).total_seconds(), 2)
+            except (ValueError, TypeError):
+                duration = None
+        conn.execute(
+            "UPDATE batches SET status = ?, rows_in = ?, rows_out = ?, partitions = ?, "
+            "finished_at = ?, duration_s = ?, error = ? WHERE batch_id = ?",
+            ("success" if ok else "failed", rows_in, rows_out, partitions,
+             finished, duration, error, batch_id),
+        )
+    return finished
+
+
+def fail_stale_batches(cutoff_iso):
+    """Fail batches still marked running since before cutoff.
+
+    A killed WSL call or a backend crash would otherwise hold the slot forever,
+    blocking every later batch. Returns how many rows were cleaned up.
+    """
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE batches SET status = 'failed', error = 'timed out', finished_at = ? "
+            "WHERE status = 'running' AND started_at < ?",
+            (_now_iso(), cutoff_iso),
+        )
+        return cur.rowcount
+
+
+def get_batches(limit=10):
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT batch_id, status, ts_from, ts_to, rows_in, rows_out, partitions, "
+            "started_at, finished_at, duration_s, error "
+            "FROM batches ORDER BY batch_id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_running_batch():
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT batch_id, ts_from, ts_to, started_at FROM batches "
+            "WHERE status = 'running' ORDER BY batch_id DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_batch_state():
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT watermark, schedule_enabled, schedule_minutes, last_scheduled_at "
+            "FROM batch_state WHERE id = 1"
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def set_batch_state(**updates):
+    """Update the single batch_state row; unrecognised keys are ignored."""
+    allowed = ("watermark", "schedule_enabled", "schedule_minutes", "last_scheduled_at")
+    fields = {k: v for k, v in updates.items() if k in allowed}
+    if fields:
+        assignments = ", ".join("%s = ?" % k for k in fields)
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE batch_state SET %s WHERE id = 1" % assignments,
+                list(fields.values()),
+            )
+    return get_batch_state()
+
+
+def advance_watermark(ts_to):
+    """Move the watermark forward, never backward. Only call after a success."""
+    if not ts_to:
+        return get_batch_state()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE batch_state SET watermark = ? "
+            "WHERE id = 1 AND (watermark IS NULL OR watermark < ?)",
+            (ts_to, ts_to),
+        )
+    return get_batch_state()
+
+
+def earliest_reading_ts():
+    with _connect() as conn:
+        row = conn.execute("SELECT MIN(ts) AS ts FROM readings").fetchone()
+    return row["ts"] if row and row["ts"] else None
+
+
+def get_range_for_export(start_iso, end_iso):
+    """Readings in a batch window: strictly after start_iso, up to end_iso.
+
+    Left-open so a reading on a batch boundary is never counted by two
+    consecutive batches.
+    """
+    query = "SELECT sensor_id, temperature, humidity, ts FROM readings WHERE ts <= ?"
+    params = [end_iso]
+    if start_iso:
+        query += " AND ts > ?"
+        params.append(start_iso)
+    query += " ORDER BY ts"
+    with _connect() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── user-defined batch windows ─────────────────────────────────
+# A window is a named time period the dashboard shows as one batch. It is a
+# view onto the readings — deleting one never removes processed data.
+def insert_window(name, ts_from, ts_to):
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO batch_windows (name, ts_from, ts_to, created_at) VALUES (?, ?, ?, ?)",
+            (name, ts_from, ts_to, _now_iso()),
+        )
+        window_id = cur.lastrowid
+    return get_window(window_id)
+
+
+def get_window(window_id):
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT window_id, name, ts_from, ts_to, created_at "
+            "FROM batch_windows WHERE window_id = ?",
+            (int(window_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_windows():
+    """Every window, newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT window_id, name, ts_from, ts_to, created_at "
+            "FROM batch_windows ORDER BY window_id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_window(window_id):
+    """Drop a window definition, leaving any processed data untouched."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM batch_windows WHERE window_id = ?", (int(window_id),)
+        )
+        return cur.rowcount
+
+
+# ── readings outside a temperature/humidity box ────────────────
+def _outlier_conds(t_min, t_max, h_min, h_max):
+    """The 'outside this box' conditions and the values they bind.
+
+    Each bound is optional; omitting one simply drops that side of the box.
+    """
+    conds, params = [], []
+    for column, lo, hi in (("temperature", t_min, t_max), ("humidity", h_min, h_max)):
+        if lo is not None:
+            conds.append("%s < ?" % column)
+            params.append(float(lo))
+        if hi is not None:
+            conds.append("%s > ?" % column)
+            params.append(float(hi))
+    return conds, params
+
+
+def _outlier_where(start_iso, end_iso, sensor_id, t_min, t_max, h_min, h_max):
+    """Shared WHERE for the two outlier queries; None when no bounds were given."""
+    conds, extra = _outlier_conds(t_min, t_max, h_min, h_max)
+    if not conds:
+        return None, []
+    query = ("WHERE ts BETWEEN ? AND ? "
+             "AND temperature BETWEEN 0 AND 50 AND humidity BETWEEN 0 AND 100")
+    params = [start_iso, end_iso]
+    if sensor_id:
+        query += " AND sensor_id = ?"
+        params.append(sensor_id)
+    query += " AND (" + " OR ".join(conds) + ")"
+    params += extra
+    return query, params
+
+
+def count_outliers(start_iso, end_iso, sensor_id=None,
+                   t_min=None, t_max=None, h_min=None, h_max=None):
+    """How many readings fall outside the given box.
+
+    With no bounds supplied nothing is outside it, so the answer is 0.
+    """
+    where, params = _outlier_where(start_iso, end_iso, sensor_id, t_min, t_max, h_min, h_max)
+    if where is None:
+        return 0
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM readings " + where, params
+        ).fetchone()["n"]
+
+
+def outliers_range(start_iso, end_iso, sensor_id=None,
+                   t_min=None, t_max=None, h_min=None, h_max=None, limit=200):
+    """Readings outside the given box, newest first."""
+    where, params = _outlier_where(start_iso, end_iso, sensor_id, t_min, t_max, h_min, h_max)
+    if where is None:
+        return []
+    query = ("SELECT sensor_id, temperature, humidity, ts FROM readings " +
+             where + " ORDER BY ts DESC LIMIT ?")
+    params.append(int(limit))
+    with _connect() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_alerts_in(start_iso, end_iso, sensor_id=None, limit=200):
+    """Alert and recovery events inside a time range, newest first."""
+    query = ("SELECT sensor_id, condition, value, threshold, kind, ts "
+             "FROM alerts WHERE ts BETWEEN ? AND ?")
+    params = [start_iso, end_iso]
+    if sensor_id:
+        query += " AND sensor_id = ?"
+        params.append(sensor_id)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(int(limit))
+    with _connect() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]

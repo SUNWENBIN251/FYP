@@ -7,7 +7,8 @@
 #    1. start HDFS + YARN
 #    2. start Hive metastore + HiveServer2
 #    3. upload the backend's readings.csv to HDFS
-#    4. PySpark: hourly aggregates (avg/max/min temp & humidity)
+#    4. PySpark: hourly aggregates (avg/max/min temp & humidity),
+#       written partitioned by day (dt=YYYY-MM-DD)
 #    5. Hive external table + SQL queries over the aggregates
 #
 #  Notes:
@@ -69,8 +70,16 @@ else
 fi
 
 echo
+# The aggregate output is partitioned by day (dt=YYYY-MM-DD/). An older run may
+# have left the previous flat layout's part-* files at the root; a partitioned
+# table ignores those, so clear them once to avoid a confusing mixture.
+if hdfs dfs -ls /iot/agg_hour/ 2>/dev/null | grep -qE '/part-'; then
+  echo "  migrating: removing legacy non-partitioned output"
+  hdfs dfs -rm -r -f /iot/agg_hour >/dev/null 2>&1
+fi
+
 echo "==================== 4) SPARK HOURLY AGGREGATION ===================="
-spark-submit --master local[*] "$ETL_PY" 2>/dev/null | grep -E '清洗后|agg 总行数|已写入'
+spark-submit --master local[*] "$ETL_PY" 2>/dev/null | grep -E 'rows after cleaning|agg total rows|written to HDFS'
 
 echo
 echo "==================== 5) HIVE SQL OVER THE AGGREGATES ===================="
@@ -79,14 +88,18 @@ BQ() { beeline -u jdbc:hive2://localhost:10000 -e "$1" 2>&1 \
 
 BQ "CREATE DATABASE IF NOT EXISTS iot;"
 BQ "DROP TABLE IF EXISTS iot.agg_hour;"
+# dt is the partition key (one directory per day under the LOCATION), which is
+# what lets an incremental batch replace a single day instead of everything.
 BQ "CREATE EXTERNAL TABLE iot.agg_hour (
   sensor_id STRING, hour STRING,
   avg_temp DOUBLE, max_temp DOUBLE, min_temp DOUBLE,
   avg_hum  DOUBLE, max_hum  DOUBLE, min_hum  DOUBLE,
   cnt BIGINT)
+PARTITIONED BY (dt STRING)
 ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
 STORED AS TEXTFILE
 LOCATION 'hdfs://localhost:9000/iot/agg_hour';"
+BQ "MSCK REPAIR TABLE iot.agg_hour;"
 
 echo "--- total hourly rows ---"
 BQ "SELECT COUNT(*) AS total_hourly_rows FROM iot.agg_hour;"

@@ -256,7 +256,10 @@
     padding: 9px 12px; border-radius: 8px; outline: none; font-variant-numeric: tabular-nums;
   }
   .field input:focus { border-color: var(--temp); box-shadow: 0 0 0 2px rgba(247,169,59,.18); }
-  .field input[type="datetime-local"] { font-size: 12px; }
+  /* The trailing CJK family matters: an empty datetime-local renders the
+     browser's localised placeholder (年/月/日 on a Chinese system) and the mono
+     font has no CJK glyphs, which would otherwise show as tofu boxes. */
+  .field input[type="datetime-local"] { font-size: 12px; font-family: var(--mono), "Microsoft YaHei", "PingFang SC", sans-serif; }
   .field select {
     width: 100%; background: var(--panel-2); border: 1px solid var(--hairline);
     color: var(--text); font-family: var(--mono); font-size: 14px;
@@ -334,6 +337,9 @@
     border-bottom:1px solid var(--hairline); position:sticky; top:0; background:var(--panel); }
   .hist-table td { padding:6px 10px; border-bottom:1px solid var(--hairline); color:var(--text); }
   .hist-table td.num { text-align:right; }
+  /* numeric columns start at the 3rd column in both views (Readings and Daily),
+     so right-align those headers to line up with their right-aligned values */
+  .hist-table th:nth-child(n+3) { text-align:right; }
   .hist-table tr:hover td { background:rgba(255,255,255,.02); }
   .hist-table td.empty { color:var(--faint); text-align:center; padding:16px; }
   .hist-wrap { max-height:420px; overflow:auto; }
@@ -343,6 +349,93 @@
   .seg-toggle button { background:transparent; border:0; color:var(--muted); padding:6px 14px;
     font-size:12px; cursor:pointer; }
   .seg-toggle button.active { background:var(--panel-2); color:var(--text); }
+
+  /* Batch processing */
+  .trend-badge.failed { color:var(--danger); background:rgba(241,87,75,.12); }
+  /* Only the numeric batch columns are right-aligned; Status stays left so it
+     reads as a label. These override .hist-table th:nth-child(n+3) by specificity. */
+  .hist-table.batch-table th:nth-child(3),
+  .hist-table.batch-table th:nth-child(4),
+  .hist-table.batch-table th:nth-child(6) { text-align:right; }
+  .hist-table.batch-table th:nth-child(5) { text-align:left; }
+
+  /* Batch cards */
+  .batch-card { background:var(--panel-2); border:1px solid var(--hairline);
+    border-radius:10px; padding:14px 16px; margin-top:12px; }
+  .batch-card-head { display:flex; align-items:flex-start; justify-content:space-between;
+    gap:12px; flex-wrap:wrap; }
+  .batch-card-name { font-family:var(--display); font-weight:600; font-size:13px;
+    letter-spacing:.04em; color:var(--text); }
+  .batch-card-window { font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:4px; }
+  .batch-card-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .batch-card-actions .btn { padding:6px 12px; font-size:11px; }
+  .batch-card-stats { margin-top:10px; font-family:var(--mono); font-size:12px;
+    color:var(--muted); line-height:1.8; }
+  .batch-card-stats b { color:var(--text); }
+  .batch-card-query { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:12px; }
+  .batch-card-query .field { flex:0 0 auto; }
+  .batch-card-query .field label { font-size:9px; margin-bottom:4px; }
+  .batch-card-query .field input { width:86px; padding:6px 8px; font-size:12px; }
+  .batch-card-query .btn { padding:7px 14px; font-size:11px; }
+  .batch-card-tabs { margin-top:12px; }
+  /* collapsed: just the name line, the time range and the statistics */
+  .batch-card-head { cursor:pointer; user-select:none; }
+  .batch-card-head .chev { display:inline-block; width:13px; color:var(--faint); font-size:11px; }
+  .batch-card.collapsed { padding:9px 14px; }
+  .batch-card.collapsed .batch-card-head { align-items:center; }
+  .batch-card.collapsed .batch-card-name { font-size:12.5px; }
+  .batch-card.collapsed .batch-card-stats { margin-top:6px; font-size:11.5px; line-height:1.7; }
+  .batch-card.collapsed .batch-card-query,
+  .batch-card.collapsed .batch-card-tabs,
+  .batch-card.collapsed .batch-card-body { display:none; }
+
+  /* Live pipeline strip */
+  .pipe { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    flex-wrap:wrap; margin-bottom:12px; padding:9px 12px;
+    border:1px solid var(--hairline); border-radius:8px; background:var(--panel-2); }
+  .pipe-stages { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  .pipe-stage { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono);
+    font-size:11px; letter-spacing:.04em; color:var(--faint);
+    padding:3px 9px; border-radius:5px; border:1px solid transparent; }
+  .pipe-stage .dot { width:7px; height:7px; border-radius:50%; background:var(--faint); }
+  .pipe-stage.done { color:var(--ok); }
+  .pipe-stage.done .dot { background:var(--ok); box-shadow:0 0 6px rgba(62,213,139,.7); }
+  .pipe-stage.active { color:var(--temp); background:rgba(247,169,59,.1);
+    border-color:rgba(247,169,59,.35); }
+  .pipe-stage.active .dot { background:var(--temp); animation:pulse 1.1s infinite; }
+  .pipe-stage.failed { color:var(--danger); background:rgba(241,87,75,.1);
+    border-color:rgba(241,87,75,.4); }
+  .pipe-stage.failed .dot { background:var(--danger); }
+  .pipe-sep { color:var(--faint); font-size:10px; }
+  .pipe-timer { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .pipe-timer.live { color:var(--temp); }
+  .pipe-right { display:flex; align-items:center; gap:10px; }
+  .pipe-log-btn { padding:4px 10px; font-size:10px; letter-spacing:.05em; }
+  .pipe-log { margin:0 0 12px; padding:10px 12px; background:#0C131B;
+    border:1px solid var(--hairline); border-radius:8px; font-family:var(--mono);
+    font-size:11px; line-height:1.6; color:var(--muted);
+    max-height:150px; overflow:auto; white-space:pre-wrap; display:none; }
+  .pipe-log.show { display:block; }
+  .batch-card.running { border-color:rgba(247,169,59,.45); }
+
+  /* Reports from Hive */
+  .report-error { padding:14px 16px; border:1px solid rgba(241,87,75,.4);
+    background:rgba(241,87,75,.08); border-radius:8px; color:var(--danger);
+    font-family:var(--mono); font-size:12px; line-height:1.6; }
+  .hm { font-family:var(--mono); font-size:10px; overflow-x:auto; }
+  .hm-row { display:grid; grid-template-columns:46px repeat(24, minmax(0, 1fr));
+    gap:2px; margin-bottom:2px; align-items:center; }
+  .hm-h { color:var(--faint); text-align:center; font-size:9px; }
+  .hm-day { color:var(--muted); white-space:nowrap; }
+  .hm-cell { height:16px; border-radius:2px; cursor:default; }
+  .hm-miss { background:var(--panel-2); box-shadow:inset 0 0 0 1px var(--hairline); }
+  .hm-scale { margin-top:10px; font-size:10px; color:var(--faint); }
+  .gap-bad { color:var(--danger); font-weight:600; }
+  .gap-ok { color:var(--ok); }
+  .bar-track { display:inline-block; width:110px; height:8px; border-radius:4px;
+    background:var(--panel-2); box-shadow:inset 0 0 0 1px var(--hairline);
+    vertical-align:middle; overflow:hidden; }
+  .bar-fill { display:block; height:100%; background:linear-gradient(90deg, var(--humid), var(--temp)); }
 </style>
 </head>
 <body>
@@ -470,61 +563,89 @@
     </div>
   </div>
 
-  <!-- Alert history -->
-  <section class="panel" style="margin-top:20px;">
-    <div class="panel-title"><span class="tick danger">&#10005;</span> Alert History</div>
-    <div class="alert-table-wrap">
-      <table class="alert-table">
-        <thead><tr><th>Time</th><th>Sensor</th><th>Type</th><th>Condition</th><th>Reading</th><th>Limit</th></tr></thead>
-        <tbody id="alert-body">
-          <tr><td colspan="6" class="empty">No alerts recorded yet.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="hint">Every threshold crossing and recovery is logged here and exported for batch analysis.</div>
-  </section>
-
-  <!-- History browser -->
+  <!-- Batch processing: define a period as a batch, inspect and process it -->
   <section class="panel" style="margin-top:20px;">
     <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
-      <span><span class="tick humid">&#8801;</span> History</span>
-      <div class="seg-toggle" id="hist-mode">
-        <button data-mode="rows" class="active">Readings</button>
-        <button data-mode="daily">Daily Summary</button>
+      <span><span class="tick">&#9881;</span> Batch Processing</span>
+      <span class="trend-badge flat" id="batch-phase">IDLE</span>
+    </div>
+
+    <!-- live pipeline: one chip per stage, lit up as the run reaches it -->
+    <div class="pipe">
+      <div class="pipe-stages" id="pipe-stages"></div>
+      <div class="pipe-right">
+        <div class="pipe-timer" id="pipe-timer">idle</div>
+        <button class="btn btn-ghost pipe-log-btn" id="pipe-log-toggle"
+                style="display:none;">Log &#9662;</button>
       </div>
     </div>
+    <pre class="pipe-log" id="pipe-log"></pre>
 
     <div class="hist-controls">
       <div class="field">
-        <label for="hist-start">From</label>
-        <input type="datetime-local" id="hist-start">
+        <label for="new-name">Name</label>
+        <input type="text" id="new-name" placeholder="optional">
       </div>
       <div class="field">
-        <label for="hist-end">To</label>
-        <input type="datetime-local" id="hist-end">
+        <label for="new-preset">Preset</label>
+        <select id="new-preset">
+          <option value="custom">Custom</option>
+          <option value="1">Last hour</option>
+          <option value="24">Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+          <option value="all">All data</option>
+        </select>
       </div>
       <div class="field">
-        <label for="hist-sensor">Sensor</label>
-        <select id="hist-sensor"><option value="">All sensors</option></select>
+        <label for="new-from">From</label>
+        <input type="datetime-local" id="new-from">
       </div>
-      <button class="btn btn-primary" id="hist-load">Load</button>
+      <div class="field">
+        <label for="new-to">To</label>
+        <input type="datetime-local" id="new-to">
+      </div>
+      <button class="btn btn-primary" id="new-create">Create batch</button>
+    </div>
+    <div class="hint">A batch is a time period you can inspect — statistics, abnormal readings, every raw reading, alert events — and process into Hive on its own. Spark's own job UI is at <b>localhost:4040</b>: open it <i>before</i> pressing Process, since it only lives as long as the job runs.</div>
+
+    <div id="batch-list"></div>
+
+    <div class="hist-controls" style="margin-top:16px;border-top:1px solid var(--hairline);padding-top:14px;">
+      <div class="field">
+        <label for="batch-sched">Automatic (all data)</label>
+        <select id="batch-sched">
+          <option value="0">Off</option>
+          <option value="30">Every 30 minutes</option>
+          <option value="60">Hourly</option>
+          <option value="360">Every 6 hours</option>
+          <option value="1440">Daily</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" id="batch-rebuild">Rebuild all</button>
+    </div>
+    <div class="hist-summary" id="batch-watermark">Loading batch state…</div>
+  </section>
+
+  <!-- Reports computed by Spark and read back from Hive. Hidden until a batch
+       has been processed, since that is what gives it data to report on. -->
+  <section class="panel" id="reports-panel" style="margin-top:20px;display:none;">
+    <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span><span class="tick humid">&#9636;</span> Reports from Hive</span>
+      <span class="trend-badge flat" id="report-badge">HIVE</span>
     </div>
 
-    <div class="hist-summary" id="hist-summary">Pick a date range and press Load.</div>
-
-    <div class="hist-wrap">
-      <table class="hist-table">
-        <thead id="hist-head"></thead>
-        <tbody id="hist-body"><tr><td class="empty">No data loaded.</td></tr></tbody>
-      </table>
+    <div class="hist-controls" id="report-buttons">
+      <button class="btn btn-primary" data-report="heatmap">Hourly heatmap</button>
+      <button class="btn btn-ghost" data-report="trend">Daily trend</button>
+      <button class="btn btn-ghost" data-report="spike">Temperature spikes</button>
+      <button class="btn btn-ghost" data-report="risk">Risk hours</button>
     </div>
 
-    <div class="pager" id="hist-pager" style="display:none;">
-      <button class="btn btn-ghost" id="hist-prev">&#8592; Prev</button>
-      <span id="hist-pageinfo">—</span>
-      <button class="btn btn-ghost" id="hist-next">Next &#8594;</button>
-    </div>
-    <div class="hint">Browse every stored reading for any period, and see per-day summaries.</div>
+    <div class="hist-summary" id="report-summary">Pick a report. These read the Hive table, so the first load of each takes a few seconds.</div>
+
+    <div id="report-body"></div>
+
+    <div class="hint">Every report here is computed by <b>Spark</b> and stored in the Hive table <b>iot.agg_hour</b> — the batch job's output, not the dashboard's own database. Whole-history questions live here; the batch cards above cover one period at a time.</div>
   </section>
 
   <footer>
@@ -581,6 +702,14 @@
     if (isNaN(d)) return "--";
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
   }
+  /* datetime-local inputs want "YYYY-MM-DDTHH:MM" in local time */
+  function fmtInputLocal(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function nowInputLocal() { return fmtInputLocal(new Date().toISOString()); }
   function fmtNum(v) { return (v === null || v === undefined || isNaN(v)) ? "--" : v.toFixed(1); }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -945,159 +1074,9 @@
       .catch(function () {});
   }
 
-  // ── Alert history ──────────────────────────
-  function loadAlerts() {
-    return fetch("/api/alerts?limit=25", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (data) { renderAlerts(data.alerts || []); })
-      .catch(function () {});
-  }
-
-  function renderAlerts(list) {
-    var body = document.getElementById("alert-body");
-    if (!body) return;
-    if (!list.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty">No alerts recorded yet.</td></tr>';
-      return;
-    }
-    body.innerHTML = list.map(function (a) {
-      var cond = String(a.condition || "").replace(/_/g, " ").toUpperCase();
-      var isRec = a.kind === "recovery";
-      var val = (a.value === null || a.value === undefined) ? "--" : Number(a.value).toFixed(1);
-      var lim = (a.threshold === null || a.threshold === undefined) ? "--" : Number(a.threshold).toFixed(1);
-      return '<tr class="' + (isRec ? "rec" : "al") + '">' +
-        '<td>' + escapeHtml(fmtDateLocal(a.ts)) + '</td>' +
-        '<td>' + escapeHtml(a.sensor_id) + '</td>' +
-        '<td>' + (isRec ? "RECOVERED" : "ALERT") + '</td>' +
-        '<td>' + escapeHtml(cond) + '</td>' +
-        '<td>' + val + '</td><td>' + lim + '</td></tr>';
-    }).join("");
-  }
-
-  // ── History browser ────────────────────────
-  var hist = { mode: "rows", limit: 50, offset: 0, total: 0 };
-
-  function histQuery() {
-    var qs = new URLSearchParams();
-    var s = document.getElementById("hist-start").value;
-    var e = document.getElementById("hist-end").value;
-    if (s) qs.set("start", s);
-    if (e) qs.set("end", e);
-    var sen = document.getElementById("hist-sensor").value;
-    if (sen) qs.set("sensor_id", sen);
-    return qs;
-  }
-
-  function loadHistory() { hist.offset = 0; fetchHistory(); }
-
-  function fetchHistory() {
-    var summaryEl = document.getElementById("hist-summary");
-    var qs = histQuery();
-
-    if (hist.mode === "daily") {
-      document.getElementById("hist-pager").style.display = "none";
-      fetch("/api/daily?" + qs.toString(), { cache: "no-store" })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (d) { renderDaily(d.days || []); })
-        .catch(function () { summaryEl.textContent = "Could not load data."; });
-      return;
-    }
-
-    qs.set("limit", hist.limit);
-    qs.set("offset", hist.offset);
-    fetch("/api/readings?" + qs.toString(), { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (d) {
-        hist.total = d.total || 0;
-        renderRows(d.rows || []);
-        renderHistSummary(d.summary || {}, hist.total);
-        renderPager();
-      })
-      .catch(function () { summaryEl.textContent = "Could not load data."; });
-  }
-
-  function renderHistSummary(s, total) {
-    var el = document.getElementById("hist-summary");
-    if (!total) { el.textContent = "No readings in this range."; return; }
-    el.innerHTML = "<b>" + total.toLocaleString() + "</b> readings &nbsp;|&nbsp; " +
-      "temperature <b>" + fmtNum(s.t_min) + "</b>&ndash;<b>" + fmtNum(s.t_max) +
-      "</b> &deg;C (avg <b>" + fmtNum(s.t_avg) + "</b>) &nbsp;|&nbsp; " +
-      "humidity <b>" + fmtNum(s.h_min) + "</b>&ndash;<b>" + fmtNum(s.h_max) +
-      "</b> %RH (avg <b>" + fmtNum(s.h_avg) + "</b>)";
-  }
-
-  function renderRows(rows) {
-    document.getElementById("hist-head").innerHTML =
-      "<tr><th>Time (UTC)</th><th>Sensor</th><th>Temperature</th><th>Humidity</th></tr>";
-    var body = document.getElementById("hist-body");
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="4" class="empty">No rows in this range.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map(function (r) {
-      return "<tr><td>" + escapeHtml(r.ts) + "</td><td>" + escapeHtml(r.sensor_id) +
-        '</td><td class="num">' + fmtNum(r.temperature) + '</td><td class="num">' +
-        fmtNum(r.humidity) + "</td></tr>";
-    }).join("");
-  }
-
-  function renderDaily(days) {
-    document.getElementById("hist-head").innerHTML =
-      "<tr><th>Day (UTC)</th><th>Sensor</th><th>Readings</th>" +
-      "<th>Temp min</th><th>Temp avg</th><th>Temp max</th>" +
-      "<th>Hum min</th><th>Hum avg</th><th>Hum max</th></tr>";
-    var body = document.getElementById("hist-body");
-    document.getElementById("hist-summary").textContent =
-      days.length ? (days.length + " day/sensor rows") : "No data in this range.";
-    if (!days.length) {
-      body.innerHTML = '<tr><td colspan="9" class="empty">No data.</td></tr>';
-      return;
-    }
-    body.innerHTML = days.map(function (d) {
-      return "<tr><td>" + escapeHtml(d.day) + "</td><td>" + escapeHtml(d.sensor_id) +
-        '</td><td class="num">' + d.n + '</td>' +
-        '<td class="num">' + fmtNum(d.t_min) + '</td><td class="num">' + fmtNum(d.t_avg) +
-        '</td><td class="num">' + fmtNum(d.t_max) + '</td>' +
-        '<td class="num">' + fmtNum(d.h_min) + '</td><td class="num">' + fmtNum(d.h_avg) +
-        '</td><td class="num">' + fmtNum(d.h_max) + "</td></tr>";
-    }).join("");
-  }
-
-  function renderPager() {
-    var pager = document.getElementById("hist-pager");
-    if (!hist.total) { pager.style.display = "none"; return; }
-    pager.style.display = "flex";
-    var page = Math.floor(hist.offset / hist.limit) + 1;
-    var pages = Math.max(1, Math.ceil(hist.total / hist.limit));
-    document.getElementById("hist-pageinfo").textContent = "Page " + page + " / " + pages;
-    document.getElementById("hist-prev").disabled = hist.offset <= 0;
-    document.getElementById("hist-next").disabled = hist.offset + hist.limit >= hist.total;
-  }
-
-  function bindHistory() {
-    document.getElementById("hist-load").addEventListener("click", loadHistory);
-    document.getElementById("hist-prev").addEventListener("click", function () {
-      hist.offset = Math.max(0, hist.offset - hist.limit); fetchHistory();
-    });
-    document.getElementById("hist-next").addEventListener("click", function () {
-      hist.offset += hist.limit; fetchHistory();
-    });
-    var seg = document.getElementById("hist-mode");
-    seg.addEventListener("click", function (e) {
-      var b = e.target.closest ? e.target.closest("button") : null;
-      if (!b) return;
-      hist.mode = b.getAttribute("data-mode");
-      Array.prototype.forEach.call(seg.querySelectorAll("button"), function (x) {
-        x.classList.toggle("active", x === b);
-      });
-      fetchHistory();
-    });
-  }
-
   // ── Sensor segmented control ───────────────
   function updateExportSensorSelect() {
     fillSensorSelect("exp-sensor");
-    fillSensorSelect("hist-sensor");
   }
 
   function fillSensorSelect(id) {
@@ -1188,18 +1167,833 @@
     });
   }
 
+  // ── Batch windows ──────────────────────────
+  // A batch is a named period stored in the database. Its card shows the
+  // period's statistics, can list abnormal readings (against the alert
+  // thresholds) or readings outside a custom temperature/humidity box, and
+  // carries the period's raw readings and alert events. Processing a card runs
+  // the Spark job over exactly that window.
+  var batch = { running: false, timer: null, userStarted: false };
+  var batchInfo = {};
+  var windows = [];
+  var cardState = {};       // window_id -> { tab, offset, total, rows, bounds, kind, q }
+  var windowsSig = "";
+  var PAGE = 50;
+
+  function windowSignature(list) {
+    // the running flag changes what the cards show (highlight, Process state),
+    // so it takes part in the signature even though it is not per-window
+    var live = batchInfo.running
+      ? "R" + batchInfo.running.batch_id + ":" + batchInfo.running.ts_from : "-";
+    return live + "||" + list.map(function (w) {
+      return [w.window_id, w.stats ? w.stats.n : "", w.outliers,
+              w.last_run ? w.last_run.batch_id + ":" + w.last_run.status : "-"].join(",");
+    }).join("|");
+  }
+
+  function findWindow(id) {
+    for (var i = 0; i < windows.length; i++) {
+      if (windows[i].window_id === id) return windows[i];
+    }
+    return null;
+  }
+
+  function cardEl(id) {
+    return document.querySelector('#batch-list .batch-card[data-id="' + id + '"]');
+  }
+
+  function bodyEl(id) { return document.getElementById("card-body-" + id); }
+
+  function stateOf(id) {
+    if (!cardState[id]) cardState[id] = { tab: "abnormal", offset: 0, expanded: false, q: {} };
+    if (!cardState[id].q) cardState[id].q = {};
+    return cardState[id];
+  }
+
+  function loadBatch() {
+    return fetch("/api/batch", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { renderBatch(d); })
+      .catch(function () {});
+  }
+
+  function loadWindows(force) {
+    return fetch("/api/batch/windows", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        windows = d.windows || [];
+        var sig = windowSignature(windows);
+        // only rebuild the DOM when something the cards show actually changed,
+        // so a poll never disturbs what the user is reading
+        if (force || sig !== windowsSig) {
+          windowsSig = sig;
+          renderWindows();
+        }
+      })
+      .catch(function () {});
+  }
+
+  function pollBatchWhileRunning() {
+    if (batch.timer) { clearInterval(batch.timer); batch.timer = null; }
+    if (batch.running) {
+      // 1s so the pipeline strip lights up stage by stage as it happens
+      batch.timer = setInterval(function () { loadBatch(); loadWindows(); }, 1000);
+    }
+  }
+
+  // ── live pipeline strip ────────────────────
+  // The stages come from the WSL script's own output, so what lights up is the
+  // real run, not a guess. The log tail underneath is that same output.
+  var STAGE_LABELS = {
+    export: "Export", services: "Services", spark: "Spark",
+    hdfs: "HDFS", hive: "Hive", done: "Done"
+  };
+  // the job log is optional: collapsed by default so the strip is all you see
+  var pipe = { logOpen: false };
+
+  function togglePipeLog() {
+    pipe.logOpen = !pipe.logOpen;
+    document.getElementById("pipe-log").classList.toggle("show", pipe.logOpen);
+    document.getElementById("pipe-log-toggle").innerHTML =
+      "Log " + (pipe.logOpen ? "&#9652;" : "&#9662;");
+  }
+
+  function fmtClock(secs) {
+    var m = Math.floor(secs / 60), s = secs % 60;
+    return m ? (m + ":" + (s < 10 ? "0" : "") + s) : (s + "s");
+  }
+
+  function renderPipeline(d) {
+    var stages = d.stages || [];
+    var current = (d.progress || {}).stage;
+    var running = d.running;
+    var lastRun = (d.batches || [])[0];
+
+    var index = stages.indexOf(current);
+    var failed = !running && lastRun && lastRun.status === "failed";
+
+    document.getElementById("pipe-stages").innerHTML = stages.map(function (s, i) {
+      var cls = "pipe-stage";
+      if (index >= 0 && i < index) cls += " done";
+      else if (i === index) cls += running ? " active" : (failed ? " failed" : " done");
+      return '<span class="' + cls + '"><span class="dot"></span>' +
+        escapeHtml(STAGE_LABELS[s] || s) + "</span>";
+    }).join('<span class="pipe-sep">&#8594;</span>');
+
+    var timer = document.getElementById("pipe-timer");
+    if (running && running.started_at) {
+      var started = new Date(running.started_at).getTime();
+      timer.textContent = fmtClock(Math.max(0, Math.round((Date.now() - started) / 1000)));
+      timer.className = "pipe-timer live";
+    } else if (lastRun && lastRun.duration_s !== null && lastRun.duration_s !== undefined) {
+      timer.textContent = Number(lastRun.duration_s).toFixed(1) + "s";
+      timer.className = "pipe-timer";
+    } else {
+      timer.textContent = "idle";
+      timer.className = "pipe-timer";
+    }
+
+    var lines = (d.progress || {}).log || [];
+    var log = document.getElementById("pipe-log");
+    var btn = document.getElementById("pipe-log-toggle");
+    log.textContent = lines.join("\n");
+    btn.style.display = lines.length ? "" : "none";
+    btn.innerHTML = "Log " + (pipe.logOpen ? "&#9652;" : "&#9662;");
+    log.className = (lines.length && pipe.logOpen) ? "pipe-log show" : "pipe-log";
+  }
+
+  function renderBatch(d) {
+    var wasRunning = batch.running;
+    var running = d.running;
+    var sched = d.schedule || {};
+    batchInfo = d;
+    batch.running = !!running;
+    renderPipeline(d);
+
+    var phase = document.getElementById("batch-phase");
+    if (running) {
+      phase.className = "trend-badge up";
+      phase.textContent = "RUNNING";
+    } else {
+      phase.className = "trend-badge flat";
+      phase.textContent = "IDLE";
+    }
+
+    var parts = ["watermark <b>" + (d.watermark ? escapeHtml(fmtDateLocal(d.watermark))
+      : "— (not set yet)") + "</b>"];
+    if (running) {
+      parts.push("running <b>#" + running.batch_id + "</b> since " +
+        escapeHtml(fmtDateLocal(running.started_at)));
+    }
+    parts.push("automatic <b>" + (sched.enabled ? "every " + sched.minutes + " min" : "off") + "</b>");
+    if (sched.enabled && sched.next_run) {
+      parts.push("next <b>" + escapeHtml(fmtDateLocal(sched.next_run)) + "</b>");
+    }
+    document.getElementById("batch-watermark").innerHTML = parts.join(" &nbsp;|&nbsp; ");
+
+    var sel = document.getElementById("batch-sched");
+    var want = sched.enabled ? String(sched.minutes) : "0";
+    if (sel.value !== want) {
+      var known = Array.prototype.some.call(sel.options, function (o) { return o.value === want; });
+      if (!known) {
+        var opt = document.createElement("option");
+        opt.value = want;
+        opt.textContent = "Every " + sched.minutes + " minutes";
+        sel.appendChild(opt);
+      }
+      sel.value = want;
+    }
+
+    document.getElementById("batch-rebuild").disabled = !!running;
+    Array.prototype.forEach.call(document.querySelectorAll('#batch-list [data-act="process"]'),
+      function (b) { b.disabled = !!running; });
+    pollBatchWhileRunning();
+
+    if (wasRunning && !running && d.batches && d.batches.length) {
+      var last = d.batches[0];
+      if (last.status === "success") {
+        toast("Processing finished — " + (last.rows_in || 0) + " rows in, " +
+          (last.rows_out || 0) + " hourly rows out", "ok");
+        // Hive just changed (the backend dropped its cache with the run), so
+        // refresh whichever report is on screen
+        if (report.current) loadReport(report.current);
+        // only a run the user started from this page reveals the panel, so a
+        // scheduled batch cannot pop it up on its own
+        if (batch.userStarted) revealReports();
+      } else {
+        toast("Processing failed: " + (last.error || "unknown error"), "err");
+      }
+      loadWindows(true);
+    }
+  }
+
+  // ── cards ──────────────────────────────────
+  function renderWindows() {
+    var host = document.getElementById("batch-list");
+    if (!windows.length) {
+      host.innerHTML = '<div class="hist-summary">No batches yet — pick a period above ' +
+        "and press Create batch.</div>";
+      return;
+    }
+    host.innerHTML = windows.map(windowCard).join("");
+    windows.forEach(function (w) {
+      if (stateOf(w.window_id).rows) paintCard(w.window_id);
+    });
+  }
+
+  function windowCard(w) {
+    var id = w.window_id;
+    var st = stateOf(id);
+    var s = w.stats || {};
+    var run = w.last_run;
+    var hasData = (s.n || 0) > 0;
+    var live = batchInfo.running &&
+      batchInfo.running.ts_from === w.ts_from && batchInfo.running.ts_to === w.ts_to;
+
+    var runText = !run ? "never processed"
+      : (run.status === "success"
+          ? "processed · " + (run.rows_out || 0) + " hourly rows · " + (run.duration_s || 0) + "s"
+          : run.status + (run.error ? " · " + escapeHtml(run.error) : ""));
+
+    var stats = hasData
+      ? "<b>" + s.n.toLocaleString() + "</b> readings &nbsp;|&nbsp; " +
+        "temperature avg <b>" + fmtNum(s.t_avg) + "</b> &deg;C (" +
+        fmtNum(s.t_min) + "&ndash;" + fmtNum(s.t_max) + ") &nbsp;|&nbsp; " +
+        "humidity avg <b>" + fmtNum(s.h_avg) + "</b> %RH (" +
+        fmtNum(s.h_min) + "&ndash;" + fmtNum(s.h_max) + ") &nbsp;|&nbsp; " +
+        "<b>" + w.outliers + "</b> abnormal"
+      : "No readings in this period.";
+
+    return '<div class="batch-card' + (st.expanded ? "" : " collapsed") +
+        (live ? " running" : "") + '" data-id="' + id + '">' +
+      '<div class="batch-card-head" data-act="expand">' +
+        "<div>" +
+          '<div class="batch-card-name"><span class="chev">' +
+            (st.expanded ? "&#9662;" : "&#9656;") + "</span> " +
+            escapeHtml(w.name) +
+            (live ? ' <span class="trend-badge up">PROCESSING</span>' : "") + "</div>" +
+          '<div class="batch-card-window">' + escapeHtml(fmtDateLocal(w.ts_from)) +
+            " &rarr; " + escapeHtml(fmtDateLocal(w.ts_to)) + "</div>" +
+        "</div>" +
+        '<div class="batch-card-actions">' +
+          '<button class="btn btn-primary" data-act="process">Process</button>' +
+          '<button class="btn btn-ghost" data-act="delete">Delete</button>' +
+        "</div>" +
+      "</div>" +
+      '<div class="batch-card-stats">' + stats + " &nbsp;|&nbsp; " + runText + "</div>" +
+      (hasData ? queryRow(st) + tabsRow(st) : "") +
+      '<div class="batch-card-body" id="card-body-' + id + '"></div>' +
+      "</div>";
+  }
+
+  function queryRow(st) {
+    var v = function (k) {
+      return st.q[k] === undefined ? "" : escapeHtml(String(st.q[k]));
+    };
+    return '<div class="batch-card-query">' +
+      '<button class="btn btn-ghost" data-act="abnormal">Show abnormal</button>' +
+      '<div class="field"><label>Temp min &deg;C</label>' +
+        '<input type="number" step="0.1" data-b="t_min" value="' + v("t_min") + '"></div>' +
+      '<div class="field"><label>Temp max &deg;C</label>' +
+        '<input type="number" step="0.1" data-b="t_max" value="' + v("t_max") + '"></div>' +
+      '<div class="field"><label>Humidity min %RH</label>' +
+        '<input type="number" step="0.1" data-b="h_min" value="' + v("h_min") + '"></div>' +
+      '<div class="field"><label>Humidity max %RH</label>' +
+        '<input type="number" step="0.1" data-b="h_max" value="' + v("h_max") + '"></div>' +
+      '<button class="btn btn-primary" data-act="query">Range query</button>' +
+      "</div>";
+  }
+
+  function tabsRow(st) {
+    var tabs = [["abnormal", "Abnormal"], ["readings", "Readings"], ["alerts", "Alerts"]];
+    return '<div class="seg-toggle batch-card-tabs">' + tabs.map(function (t) {
+      return '<button data-act="tab" data-tab="' + t[0] + '"' +
+        (st.tab === t[0] ? ' class="active"' : "") + ">" + t[1] + "</button>";
+    }).join("") + "</div>";
+  }
+
+  function outlierReason(r, b) {
+    if (!b) return "—";
+    var why = [];
+    if (b.t_min != null && r.temperature < b.t_min) why.push("temp<" + b.t_min);
+    if (b.t_max != null && r.temperature > b.t_max) why.push("temp>" + b.t_max);
+    if (b.h_min != null && r.humidity < b.h_min) why.push("hum<" + b.h_min);
+    if (b.h_max != null && r.humidity > b.h_max) why.push("hum>" + b.h_max);
+    return why.join(", ") || "—";
+  }
+
+  function outliersURL(id, q) {
+    var qs = new URLSearchParams();
+    ["t_min", "t_max", "h_min", "h_max"].forEach(function (k) {
+      if (q && q[k] !== undefined && q[k] !== "") qs.set(k, q[k]);
+    });
+    return "/api/batch/windows/" + id + "/outliers?" + qs.toString();
+  }
+
+  function fetchCard(id) {
+    var st = stateOf(id);
+    var url;
+    if (st.tab === "readings") {
+      url = "/api/batch/windows/" + id + "/readings?limit=" + PAGE + "&offset=" + (st.offset || 0);
+    } else if (st.tab === "alerts") {
+      url = "/api/batch/windows/" + id + "/alerts?limit=100";
+    } else {
+      url = st.kind === "custom"
+        ? outliersURL(id, st.q)
+        : "/api/batch/windows/" + id + "/outliers";
+    }
+    bodyEl(id).innerHTML = '<div class="hist-summary">Loading…</div>';
+    fetch(url, { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        st.rows = d.rows || d.alerts || [];
+        st.total = (d.total === undefined) ? st.rows.length : d.total;
+        st.bounds = d.bounds || null;
+        paintCard(id);
+      })
+      .catch(function () {
+        bodyEl(id).innerHTML = '<div class="hist-summary">Could not load data.</div>';
+      });
+  }
+
+  function paintCard(id) {
+    var st = cardState[id];
+    var host = bodyEl(id);
+    if (!st || !st.rows || !host) return;
+    if (st.tab === "alerts") host.innerHTML = alertsTable(st.rows, st.total);
+    else if (st.tab === "readings") host.innerHTML = readingsTable(st.rows) + pagerHTML(st);
+    else host.innerHTML = outliersTable(st.rows, st.bounds, st.total);
+  }
+
+  function outliersTable(rows, bounds, total) {
+    if (!rows.length) {
+      return '<div class="hist-summary">Nothing outside that range in this period.</div>';
+    }
+    var body = rows.map(function (r) {
+      return "<tr><td>" + escapeHtml(r.ts) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
+        '<td class="num">' + fmtNum(r.temperature) + '</td>' +
+        '<td class="num">' + fmtNum(r.humidity) + "</td>" +
+        "<td>" + escapeHtml(outlierReason(r, bounds)) + "</td></tr>";
+    }).join("");
+    return '<div class="hist-summary"><b>' + total.toLocaleString() +
+      "</b> readings outside the range" +
+      (rows.length < total ? " (showing the newest " + rows.length + ")" : "") + "</div>" +
+      '<div class="hist-wrap" style="max-height:260px;">' +
+      '<table class="hist-table batch-table"><thead><tr><th>Time (UTC)</th><th>Sensor</th>' +
+      "<th>Temp</th><th>Hum</th><th>Reason</th></tr></thead><tbody>" + body +
+      "</tbody></table></div>";
+  }
+
+  function readingsTable(rows) {
+    var body = rows.length
+      ? rows.map(function (r) {
+          return "<tr><td>" + escapeHtml(r.ts) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
+            '<td class="num">' + fmtNum(r.temperature) + '</td>' +
+            '<td class="num">' + fmtNum(r.humidity) + "</td></tr>";
+        }).join("")
+      : '<tr><td colspan="4" class="empty">No readings in this period.</td></tr>';
+    return '<div class="hist-wrap" style="max-height:260px;">' +
+      '<table class="hist-table"><thead><tr><th>Time (UTC)</th><th>Sensor</th>' +
+      "<th>Temperature</th><th>Humidity</th></tr></thead><tbody>" + body +
+      "</tbody></table></div>";
+  }
+
+  function alertsTable(list, total) {
+    if (!list.length) return '<div class="hist-summary">No alert events in this period.</div>';
+    var body = list.map(function (a) {
+      var cond = String(a.condition || "").replace(/_/g, " ").toUpperCase();
+      var isRec = a.kind === "recovery";
+      var val = (a.value === null || a.value === undefined) ? "--" : Number(a.value).toFixed(1);
+      var lim = (a.threshold === null || a.threshold === undefined) ? "--" : Number(a.threshold).toFixed(1);
+      return '<tr class="' + (isRec ? "rec" : "al") + '">' +
+        "<td>" + escapeHtml(fmtDateLocal(a.ts)) + "</td>" +
+        "<td>" + escapeHtml(a.sensor_id) + "</td>" +
+        "<td>" + (isRec ? "RECOVERED" : "ALERT") + "</td>" +
+        "<td>" + escapeHtml(cond) + "</td>" +
+        "<td>" + val + "</td><td>" + lim + "</td></tr>";
+    }).join("");
+    return '<div class="hist-summary"><b>' + total.toLocaleString() + "</b> alert events</div>" +
+      '<div class="alert-table-wrap" style="max-height:260px;">' +
+      '<table class="alert-table"><thead><tr><th>Time</th><th>Sensor</th><th>Type</th>' +
+      "<th>Condition</th><th>Reading</th><th>Limit</th></tr></thead><tbody>" + body +
+      "</tbody></table></div>";
+  }
+
+  function pagerHTML(st) {
+    if (!st.total || st.total <= PAGE) return "";
+    var page = Math.floor((st.offset || 0) / PAGE) + 1;
+    var pages = Math.max(1, Math.ceil(st.total / PAGE));
+    return '<div class="pager">' +
+      '<button class="btn btn-ghost" data-act="prev"' +
+        ((st.offset || 0) <= 0 ? " disabled" : "") + ">&#8592; Prev</button>" +
+      "<span>Page " + page + " / " + pages + "</span>" +
+      '<button class="btn btn-ghost" data-act="next"' +
+        ((st.offset || 0) + PAGE >= st.total ? " disabled" : "") + ">Next &#8594;</button>" +
+      "</div>";
+  }
+
+  // ── card actions ───────────────────────────
+  function setActiveTab(id, tab) {
+    var card = cardEl(id);
+    if (!card) return;
+    Array.prototype.forEach.call(card.querySelectorAll('[data-act="tab"]'), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-tab") === tab);
+    });
+  }
+
+  function switchTab(id, btn) {
+    var st = stateOf(id);
+    st.tab = btn.getAttribute("data-tab");
+    st.offset = 0;
+    setActiveTab(id, st.tab);
+    fetchCard(id);
+  }
+
+  function showAbnormal(id) {
+    var st = stateOf(id);
+    st.tab = "abnormal";
+    st.kind = "thresholds";
+    st.offset = 0;
+    setActiveTab(id, "abnormal");
+    fetchCard(id);
+  }
+
+  function showRange(id) {
+    var st = stateOf(id);
+    st.tab = "abnormal";
+    st.kind = "custom";
+    st.offset = 0;
+    setActiveTab(id, "abnormal");
+    fetchCard(id);
+  }
+
+  function createWindow() {
+    var from = document.getElementById("new-from").value;
+    var to = document.getElementById("new-to").value;
+    if (!from || !to) { toast("Pick both a start and an end", "err"); return; }
+    fetch("/api/batch/windows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: document.getElementById("new-name").value, from: from, to: to })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (res.status >= 400) { toast(res.data.error || "Could not create the batch", "err"); return; }
+        document.getElementById("new-name").value = "";
+        var created = res.data.window;
+        if (created) stateOf(created.window_id).expanded = true;   // show the new card open
+        toast("Batch created", "ok");
+        loadWindows(true);
+      })
+      .catch(function () { toast("Could not reach the backend", "err"); });
+  }
+
+  /* Collapsing is pure presentation: no request, and the query results stay in
+     cardState so expanding again repaints them without refetching. */
+  function toggleExpand(id) {
+    var st = stateOf(id);
+    var card = cardEl(id);
+    if (!card) return;
+    st.expanded = !st.expanded;
+    card.classList.toggle("collapsed", !st.expanded);
+    var chev = card.querySelector(".chev");
+    if (chev) chev.innerHTML = st.expanded ? "&#9662;" : "&#9656;";
+    if (st.expanded && st.rows) paintCard(id);
+  }
+
+  function deleteWindow(id) {
+    if (!window.confirm("Delete this batch? Data already processed into Hive is kept.")) return;
+    fetch("/api/batch/windows/" + id, { method: "DELETE" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function () {
+        delete cardState[id];
+        toast("Batch deleted", "ok");
+        loadWindows(true);
+      })
+      .catch(function () { toast("Could not delete the batch", "err"); });
+  }
+
+  function processWindow(w) {
+    if (!w) return;
+    batch.userStarted = true;
+    fetch("/api/batch/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_iso: w.ts_from, to_iso: w.ts_to })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (res.status === 409) toast("A batch is already running", "err");
+        else if (res.status >= 400) toast(res.data.error || "Could not start", "err");
+        else toast("Processing this window", "ok");
+        loadBatch();
+        loadWindows(true);
+      })
+      .catch(function () { toast("Could not reach the backend", "err"); });
+  }
+
+  function startRebuild() {
+    fetch("/api/batch/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full: true })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (res.status === 409) toast("A batch is already running", "err");
+        else if (res.status >= 400) toast(res.data.error || "Could not start", "err");
+        else toast("Rebuilding every partition", "ok");
+        loadBatch();
+      })
+      .catch(function () { toast("Could not reach the backend", "err"); });
+  }
+
+  function applyPreset() {
+    var v = document.getElementById("new-preset").value;
+    if (v === "custom") return;
+    var now = new Date();
+    var from;
+    if (v === "all") {
+      if (!batchInfo.earliest) { toast("No data to cover yet", "err"); return; }
+      from = fmtInputLocal(batchInfo.earliest);
+    } else {
+      from = fmtInputLocal(new Date(now.getTime() - parseInt(v, 10) * 3600 * 1000).toISOString());
+    }
+    document.getElementById("new-from").value = from;
+    document.getElementById("new-to").value = fmtInputLocal(now.toISOString());
+  }
+
+  function bindBatch() {
+    document.getElementById("new-create").addEventListener("click", createWindow);
+    document.getElementById("new-preset").addEventListener("change", applyPreset);
+    document.getElementById("pipe-log-toggle").addEventListener("click", togglePipeLog);
+    ["new-from", "new-to"].forEach(function (id) {
+      document.getElementById(id).addEventListener("input", function () {
+        document.getElementById("new-preset").value = "custom";
+      });
+    });
+
+    document.getElementById("batch-rebuild").addEventListener("click", function () {
+      if (!window.confirm("Rebuild every day partition from the full history?")) return;
+      startRebuild();
+    });
+
+    document.getElementById("batch-sched").addEventListener("change", function () {
+      var minutes = parseInt(this.value, 10) || 0;
+      fetch("/api/batch/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: minutes > 0, minutes: minutes })
+      })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (d) {
+          toast(d.schedule.enabled
+            ? ("Automatic batch every " + d.schedule.minutes + " min")
+            : "Automatic batch off", "ok");
+          loadBatch();
+        })
+        .catch(function () { toast("Could not change the schedule", "err"); });
+    });
+
+    // one delegated handler for the whole list, so it survives every re-render
+    var host = document.getElementById("batch-list");
+    host.addEventListener("click", function (e) {
+      var el = e.target.closest ? e.target.closest("[data-act]") : null;
+      if (!el) return;
+      var card = el.closest(".batch-card");
+      var id = card ? parseInt(card.getAttribute("data-id"), 10) : null;
+      var act = el.getAttribute("data-act");
+      if (act === "expand") toggleExpand(id);
+      else if (act === "process") processWindow(findWindow(id));
+      else if (act === "delete") deleteWindow(id);
+      else if (act === "abnormal") showAbnormal(id);
+      else if (act === "query") showRange(id);
+      else if (act === "tab") switchTab(id, el);
+      else if (act === "prev") { stateOf(id).offset = Math.max(0, stateOf(id).offset - PAGE); fetchCard(id); }
+      else if (act === "next") { stateOf(id).offset += PAGE; fetchCard(id); }
+    });
+    host.addEventListener("input", function (e) {
+      var el = e.target;
+      if (!el.getAttribute || !el.getAttribute("data-b")) return;
+      var card = el.closest(".batch-card");
+      if (!card) return;
+      stateOf(parseInt(card.getAttribute("data-id"), 10)).q[el.getAttribute("data-b")] = el.value;
+    });
+  }
+
+  // ── Reports from Hive ──────────────────────
+  // These queries run through beeline inside WSL, a few seconds each, so the
+  // backend caches them until the next batch run invalidates the cache.
+  var REPORTS = {
+    heatmap: "Hourly heatmap",
+    trend: "Daily trend",
+    spike: "Temperature spikes",
+    risk: "Risk hours"
+  };
+  var report = { current: null };
+  var reportsShown = false;
+
+  /* The panel is revealed by the act of processing: it appears the moment a run
+     that started in this page finishes successfully, and reloading hides it
+     again — so "press Process, then the reports appear" is always visible. */
+  function revealReports() {
+    var panel = document.getElementById("reports-panel");
+    if (!panel || reportsShown) return;
+    reportsShown = true;
+    panel.style.display = "";
+    toast("Batch processed — reports are now available below", "ok");
+    loadReport("heatmap");
+  }
+
+  function loadReport(name) {
+    if (!REPORTS[name]) return;
+    report.current = name;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-report]"), function (b) {
+      b.className = "btn " + (b.getAttribute("data-report") === name ? "btn-primary" : "btn-ghost");
+    });
+    var summary = document.getElementById("report-summary");
+    var body = document.getElementById("report-body");
+    body.innerHTML = "";
+    summary.innerHTML = "Running <b>" + escapeHtml(REPORTS[name]) +
+      '</b> on Hive… <span style="color:var(--faint)">beeline takes a few seconds</span>';
+    fetch("/api/hive/report?name=" + encodeURIComponent(name), { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (res.status !== 200) {
+          summary.textContent = "";
+          body.innerHTML = '<div class="report-error">' +
+            escapeHtml(res.data.error || "the report failed") + "</div>";
+          return;
+        }
+        renderReport(name, res.data);
+      })
+      .catch(function () {
+        summary.textContent = "";
+        body.innerHTML = '<div class="report-error">Could not reach the backend.</div>';
+      });
+  }
+
+  function renderReport(name, d) {
+    var rows = d.rows || [];
+    var lr = d.last_run;
+    document.getElementById("report-summary").innerHTML =
+      "<b>" + rows.length.toLocaleString() + "</b> rows from Hive" +
+      (d.cached ? " &nbsp;|&nbsp; cached" : " &nbsp;|&nbsp; just computed") +
+      (lr ? " &nbsp;|&nbsp; last batch #" + lr.batch_id + " (" +
+            (lr.duration_s || 0) + "s, " + (lr.rows_out || 0) + " hourly rows)" : "");
+
+    var body = document.getElementById("report-body");
+    if (name === "heatmap") body.innerHTML = heatmapHTML(rows);
+    else if (name === "trend") body.innerHTML = trendHTML(rows);
+    else if (name === "spike") body.innerHTML = spikeHTML(rows);
+    else body.innerHTML = riskHTML(rows);
+  }
+
+  function hours24() {
+    var out = [];
+    for (var h = 0; h < 24; h++) out.push(h);
+    return out;
+  }
+
+  function tempColor(t, lo, hi) {
+    var f = (hi > lo) ? (t - lo) / (hi - lo) : 0.5;
+    f = Math.max(0, Math.min(1, f));
+    var r, g, b;
+    if (f < 0.5) {                        // cyan -> amber
+      var k = f * 2;
+      r = 72 + (247 - 72) * k;
+      g = 198 + (169 - 198) * k;
+      b = 234 + (59 - 234) * k;
+    } else {                              // amber -> red
+      var j = (f - 0.5) * 2;
+      r = 247 + (241 - 247) * j;
+      g = 169 + (87 - 169) * j;
+      b = 59 + (75 - 59) * j;
+    }
+    return "rgb(" + Math.round(r) + "," + Math.round(g) + "," + Math.round(b) + ")";
+  }
+
+  function heatmapHTML(rows) {
+    if (!rows.length) {
+      return '<div class="hist-summary">No hourly rows in Hive yet — press Process on a batch first.</div>';
+    }
+    var byDay = {}, temps = [];
+    rows.forEach(function (r) {
+      if (!byDay[r.day]) byDay[r.day] = {};
+      byDay[r.day][Number(r.hh)] = r;
+      temps.push(Number(r.t));
+    });
+    var lo = Math.min.apply(null, temps), hi = Math.max.apply(null, temps);
+    // a minimum spread keeps a nearly flat dataset from looking like noise
+    if (hi - lo < 4) {
+      var mid = (hi + lo) / 2;
+      lo = mid - 2;
+      hi = mid + 2;
+    }
+    var days = Object.keys(byDay).sort();
+    var head = '<div class="hm-row"><span class="hm-day"></span>' +
+      hours24().map(function (h) {
+        return '<span class="hm-h">' + (h % 3 === 0 ? pad(h) : "") + "</span>";
+      }).join("") + "</div>";
+    var body = days.map(function (day) {
+      var cells = hours24().map(function (h) {
+        var when = day + " " + pad(h) + ":00";
+        var r = byDay[day][h];
+        if (!r) return '<span class="hm-cell hm-miss" title="' + when + ' — no data"></span>';
+        return '<span class="hm-cell" style="background:' + tempColor(Number(r.t), lo, hi) +
+          '" title="' + when + " · " + fmtNum(r.t) + "&deg;C (" + fmtNum(r.t_lo) + "&ndash;" +
+          fmtNum(r.t_hi) + ") · " + fmtNum(r.h) + "%RH (" + fmtNum(r.h_lo) + "&ndash;" +
+          fmtNum(r.h_hi) + ") · " + r.samples + ' samples"></span>';
+      }).join("");
+      return '<div class="hm-row"><span class="hm-day">' + escapeHtml(day.slice(5)) +
+        "</span>" + cells + "</div>";
+    }).join("");
+    return '<div class="hm">' + head + body + "</div>" +
+      '<div class="hm-scale">' + fmtNum(lo) + "&deg;C (cold) &rarr; " + fmtNum(hi) +
+      "&deg;C (hot) &nbsp;|&nbsp; " + days.length +
+      " days &times; 24 hours &nbsp;|&nbsp; hover a cell for its numbers</div>";
+  }
+
+  function trendHTML(rows) {
+    if (!rows.length) return '<div class="hist-summary">No daily rows in Hive yet.</div>';
+    var temps = rows.map(function (r) { return Number(r.avg_t); });
+    // Scale on the middle 80% of days. One day averaged from a couple of
+    // readings would otherwise stretch the range and squash every other day
+    // into the bottom of the bar.
+    var sorted = temps.slice().sort(function (a, b) { return a - b; });
+    var lo = sorted[Math.floor(sorted.length * 0.1)];
+    var hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    if (!(hi > lo)) hi = lo + 1;
+    var body = rows.map(function (r) {
+      var f = Math.max(0, Math.min(1, (Number(r.avg_t) - lo) / (hi - lo)));
+      var width = 4 + Math.round(f * 96);
+      // Captured answers a different question from Samples: while the system was
+      // up, did it actually log every minute? That is the capture-rate figure.
+      var hours = Number(r.hours) || 0;
+      var captured = hours ? Math.round((Number(r.samples) / (hours * 60)) * 100) : 0;
+      var capCls = (captured >= 95 && captured <= 110) ? "gap-ok" : "gap-bad";
+      return "<tr><td>" + escapeHtml(r.day) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
+        '<td class="num">' + fmtNum(r.avg_t) + "</td>" +
+        '<td><span class="bar-track"><span class="bar-fill" style="width:' + width +
+        '%"></span></span></td>' +
+        '<td class="num">' + fmtNum(r.peak_t) + '</td>' +
+        '<td class="num">' + fmtNum(r.low_t) + '</td>' +
+        '<td class="num">' + fmtNum(r.avg_h) + '</td>' +
+        '<td class="num">' + r.samples + "</td>" +
+        '<td class="num">' + hours + " / 24</td>" +
+        '<td class="num ' + capCls + '">' + captured + "%</td></tr>";
+    }).join("");
+    return '<div class="hist-wrap" style="max-height:340px;"><table class="hist-table"><thead><tr>' +
+      "<th>Day</th><th>Sensor</th><th>Avg &deg;C</th><th>Temp trend</th><th>Peak</th><th>Low</th>" +
+      "<th>Avg %RH</th><th>Samples</th><th>Hours</th><th>Captured</th></tr></thead><tbody>" + body +
+      "</tbody></table></div>" +
+      '<div class="hint">One row per day per sensor. <b>Temp trend</b> redraws the average temperature as a bar, scaled over the middle 80% of days so one thin day cannot squash the rest — a slow warming shows up as the bars growing rightwards. <b>Samples</b> is how many readings fed that row, and <b>Hours / 24</b> is how much of the day had any data at all, so a row with few hours is not a meaningful daily average. <b>Captured</b> = samples &divide; (hours &times; 60) — while it was up, did it log every minute? That is the figure to quote for a capture-rate claim.</div>';
+  }
+
+  /* Sudden moves: each hour against the one before it. Reads as "at 12:00 it
+     went from 25.3 to 27.0 in an hour", which points straight at an event. */
+  function spikeHTML(rows) {
+    if (!rows.length) {
+      return '<div class="hist-summary">No hour-to-hour temperature moves above 0.5&deg;C in Hive.</div>';
+    }
+    var body = rows.map(function (r) {
+      var d = Number(r.delta);
+      var cls = d > 0 ? "up" : "down";
+      return "<tr><td>" + escapeHtml(r.hour) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
+        '<td class="num">' + fmtNum(r.was_t) + '</td>' +
+        '<td class="num">' + fmtNum(r.now_t) + '</td>' +
+        '<td class="num"><span class="trend-badge ' + cls + '">' +
+        (d > 0 ? "+" : "") + d.toFixed(2) + "&deg;C</span></td></tr>";
+    }).join("");
+    return '<div class="hist-wrap" style="max-height:340px;"><table class="hist-table"><thead><tr>' +
+      "<th>Hour</th><th>Sensor</th><th>Previous</th><th>This hour</th><th>Change</th>" +
+      "</tr></thead><tbody>" + body + "</tbody></table></div>" +
+      '<div class="hint">Largest hour-to-hour moves first. These are the hours worth looking at: a fast rise usually means an air conditioner failing, a door opening or a load appearing — and it shows up here <b>before</b> the temperature reaches the alert threshold. Only genuinely consecutive hours are compared, so a jump across a collection gap is not counted as a sudden move.</div>';
+  }
+
+  /* Hot AND humid at the same time, judged on the hour's extremes. */
+  function riskHTML(rows) {
+    if (!rows.length) {
+      return '<div class="hist-summary">No hour in Hive was both hot and damp enough to flag.</div>';
+    }
+    var body = rows.map(function (r) {
+      // risk is max_temp/ceiling + max_hum/ceiling, so 2.0 means both sit
+      // exactly on their limits — shown as a percentage of that.
+      var stress = Math.round((Number(r.risk) / 2) * 100);
+      var cls = stress >= 100 ? "gap-bad" : (stress >= 92 ? "" : "gap-ok");
+      return "<tr><td>" + escapeHtml(r.hour) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
+        '<td class="num">' + fmtNum(r.t_hi) + '</td>' +
+        '<td class="num">' + fmtNum(r.h_hi) + '</td>' +
+        '<td class="num ' + cls + '">' + stress + "%</td></tr>";
+    }).join("");
+    return '<div class="hist-wrap" style="max-height:340px;"><table class="hist-table"><thead><tr>' +
+      "<th>Hour</th><th>Sensor</th><th>Peak &deg;C</th><th>Peak %RH</th><th>Stress</th>" +
+      "</tr></thead><tbody>" + body + "</tbody></table></div>" +
+      '<div class="hint">Hours that were hot <b>and</b> damp at once — the combination that actually stresses equipment (condensation, corrosion). Judged on the hour\'s <b>extremes</b>, not its average: a brief 32&deg;C at 81&nbsp;%RH is the risk, and averaging it away would hide it. <b>Stress</b> is how much of the temperature and humidity ceilings those peaks together used; 100% means both sat on their limits. The floors come from your <b>Alert Thresholds</b>, so changing those changes this list.</div>';
+  }
+
+  function bindReports() {
+    document.getElementById("report-buttons").addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("[data-report]") : null;
+      if (b) loadReport(b.getAttribute("data-report"));
+    });
+  }
+
   // ── Init ───────────────────────────────────
   buildChart();
   bindThresholds();
   bindExport();
-  bindHistory();
+  bindBatch();
+  bindReports();
 
   loadTrend();
   loadThresholds();
   loadLatest();
-  loadAlerts();
+  loadBatch();
+  loadWindows(true);
   setInterval(loadLatest, POLL_MS);
-  setInterval(loadAlerts, 10000);
+  // keeps the cards honest about batches the scheduler started on its own
+  setInterval(function () { loadBatch(); loadWindows(); }, 30000);
 
   (function () {
     var d = new Date();
@@ -1210,14 +2004,16 @@
     var e = new Date(d.getTime() + 24 * 3600 * 1000);
     document.getElementById("exp-end").value = ymd(e) + "T00:00";
 
-    // history defaults: the last 7 days up to now
-    var hs = new Date(d.getTime() - 7 * 24 * 3600 * 1000);
-    document.getElementById("hist-start").value = ymd(hs) + "T00:00";
-    document.getElementById("hist-end").value =
-      ymd(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    // new-batch defaults: the last 24 hours. Pre-filled rather than left empty
+    // because an empty datetime-local shows the browser's localised
+    // placeholder, which reads as broken text in this panel.
+    document.getElementById("new-from").value =
+      fmtInputLocal(new Date(d.getTime() - 24 * 3600 * 1000).toISOString());
+    document.getElementById("new-to").value = nowInputLocal();
   })();
 
-  fetchHistory();
+  // no report is loaded here: the panel stays hidden until a Process finishes in
+  // this page, and revealReports() loads the heatmap the moment it appears
 })();
 </script>
 </body>

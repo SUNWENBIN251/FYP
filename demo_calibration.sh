@@ -7,8 +7,25 @@
 # ============================================================
 cd "$(dirname "$0")" || exit 1
 
-PY="C:/Users/1/AppData/Local/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/python.exe"
-[ -x "$PY" ] || PY="python"
+# ---- environment detection --------------------------------------------
+IS_WSL=0
+grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=1
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# locate a usable python interpreter (Windows path, then python3 / python)
+PY=""
+for c in \
+  "C:/Users/1/AppData/Local/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/python.exe" \
+  "/mnt/c/Users/1/AppData/Local/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/python.exe" \
+  python3 python python.exe; do
+  if [ -x "$c" ] || have "$c"; then PY="$c"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "ERROR: no Python interpreter found (tried python3 / python / the Windows path)."
+  echo "       Run this from Windows Git Bash, or install python3 (sudo apt install python3)."
+  exit 1
+fi
 
 API="http://localhost:5000"
 SENSOR="dht22-01"
@@ -34,11 +51,20 @@ echo " Sensor Calibration Demo"
 echo "============================================================"
 echo
 
-# 0) the backend must be running
+# 0) the backend must be reachable -- this demo drives the API directly
 code=$(curl -s -m 5 -o /dev/null -w "%{http_code}" "$API/api/latest")
 if [ "$code" != "200" ]; then
-  echo " Backend is not running (no response from $API)."
-  echo " Start run_server.bat first, then run this demo again."
+  echo
+  if [ "$IS_WSL" = "1" ]; then
+    echo " This demo needs API access, but WSL cannot reach the Windows backend"
+    echo " over localhost. Run it from Windows instead (Git Bash or CMD):"
+    echo
+    echo "     cd C:\\Users\\1\\Desktop\\FYP"
+    echo "     bash demo_calibration.sh"
+  else
+    echo " Backend is not running (no response from $API)."
+    echo " Start run_server.bat first, then run this demo again."
+  fi
   exit 1
 fi
 
