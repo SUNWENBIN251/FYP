@@ -39,9 +39,6 @@ def _backup_loop():
 
 threading.Thread(target=_backup_loop, daemon=True).start()
 
-# triggers the incremental Spark batch on its configured interval
-batch.start_scheduler()
-
 
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -234,7 +231,7 @@ def thresholds():
 
 @app.route("/api/batch")
 def batch_status():
-    """Watermark, schedule and recent batches for the dashboard panel."""
+    """Watermark, running state and recent runs for the dashboard panel."""
     return jsonify(batch.get_panel_state())
 
 
@@ -261,23 +258,6 @@ def batch_start():
     if batch_id is None:
         return jsonify({"error": "busy", "message": "a batch is already running"}), 409
     return jsonify({"ok": True, "batch_id": batch_id}), 202
-
-
-@app.route("/api/batch/schedule", methods=["POST"])
-def batch_schedule():
-    data = request.get_json(silent=True) or {}
-    updates = {}
-    if "enabled" in data:
-        updates["schedule_enabled"] = 1 if data.get("enabled") else 0
-    if data.get("minutes") is not None:
-        try:
-            minutes = int(data["minutes"])
-        except (TypeError, ValueError):
-            return jsonify({"error": "minutes must be a number"}), 400
-        updates["schedule_minutes"] = max(0, minutes)
-    if updates:
-        database.set_batch_state(**updates)
-    return jsonify({"ok": True, "schedule": batch.get_panel_state()["schedule"]})
 
 
 # ── batch windows: user-defined time periods shown as cards ────

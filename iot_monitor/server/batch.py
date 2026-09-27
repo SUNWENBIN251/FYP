@@ -22,7 +22,6 @@ import json
 import os
 import subprocess
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 
 import config
@@ -30,7 +29,6 @@ import database
 import hive
 
 HISTORY_LIMIT = 8               # batch rows shown on the dashboard
-SCHEDULE_CHECK_SECONDS = 60     # how often the scheduler looks for work
 
 
 class BatchError(Exception):
@@ -39,10 +37,6 @@ class BatchError(Exception):
 
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _parse_iso(s):
-    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
 def _stale_cutoff():
@@ -268,60 +262,15 @@ def _execute(batch_id, from_iso, to_iso):
 def get_panel_state():
     """Everything the dashboard's batch panel needs, in one call."""
     state = database.get_batch_state()
-    minutes = int(state.get("schedule_minutes") or 0)
-    enabled = bool(state.get("schedule_enabled")) and minutes > 0
-
-    next_run = None
-    if enabled:
-        last = state.get("last_scheduled_at")
-        base = _parse_iso(last) if last else datetime.now(timezone.utc)
-        next_run = (base + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     return {
         "watermark": state.get("watermark"),
         # where a default run would start before the first batch sets a watermark
         "earliest": database.earliest_reading_ts(),
-        "schedule": {"enabled": enabled, "minutes": minutes, "next_run": next_run},
         "running": database.get_running_batch(),
         "batches": database.get_batches(HISTORY_LIMIT),
         "stages": list(STAGES),
         "progress": get_progress(),
     }
-
-
-def _tick():
-    """Run a scheduled batch if one is due."""
-    state = database.get_batch_state()
-    if not state.get("schedule_enabled"):
-        return
-    minutes = int(state.get("schedule_minutes") or 0)
-    if minutes <= 0:
-        return
-
-    last = state.get("last_scheduled_at")
-    if last and datetime.now(timezone.utc) < _parse_iso(last) + timedelta(minutes=minutes):
-        return
-
-    # Stamp before running: a batch takes minutes, and the next tick must not
-    # queue a second one behind it.
-    database.set_batch_state(last_scheduled_at=_now_iso())
-    outcome = run_batch()
-    print("scheduled batch:", outcome.get("status"), outcome.get("batch_id"))
-
-
-def _loop():
-    """Scheduler thread; mirrors app.py's backup loop."""
-    while True:
-        try:
-            _tick()
-        except Exception as e:
-            print("batch scheduler failed:", e)
-        time.sleep(SCHEDULE_CHECK_SECONDS)
-
-
-def start_scheduler():
-    """Start the scheduler as a daemon thread (no-op if the interval is off)."""
-    threading.Thread(target=_loop, daemon=True).start()
 
 
 if __name__ == "__main__":

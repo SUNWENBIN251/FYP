@@ -44,7 +44,6 @@ BATCH_SCRIPT_MNT = "/mnt/c/Users/1/Desktop/FYP/iot_monitor/spark/batch_run.sh"
 HIVE_QUERY_SCRIPT_MNT = "/mnt/c/Users/1/Desktop/FYP/iot_monitor/spark/hive_query.sh"
 BATCH_WSL_DISTRO = "Ubuntu"
 BATCH_TIMEOUT_MINUTES = 20          # a running batch older than this is treated as dead
-BATCH_SCHEDULE_MINUTES = 60         # default automatic interval (0 = disabled)
 
 
 def to_mnt(win_path):

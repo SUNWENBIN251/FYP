@@ -93,18 +93,12 @@ def init_db():
         conn.execute(
             """CREATE TABLE IF NOT EXISTS batch_state (
                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                   watermark TEXT,
-                   schedule_enabled INTEGER NOT NULL DEFAULT 0,
-                   schedule_minutes INTEGER NOT NULL DEFAULT 60,
-                   last_scheduled_at TEXT
+                   watermark TEXT
                );"""
         )
         cur = conn.execute("SELECT id FROM batch_state WHERE id = 1")
         if cur.fetchone() is None:
-            conn.execute(
-                "INSERT INTO batch_state (id, schedule_enabled, schedule_minutes) VALUES (1, 0, ?)",
-                (getattr(config, "BATCH_SCHEDULE_MINUTES", 60),),
-            )
+            conn.execute("INSERT INTO batch_state (id) VALUES (1)")
         conn.execute(
             """CREATE TABLE IF NOT EXISTS batch_windows (
                    window_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,7 +312,7 @@ def claim_batch(ts_from, ts_to):
 
     The single INSERT..SELECT..WHERE NOT EXISTS statement makes the
     check-and-insert atomic under SQLite's write serialisation, so two callers
-    racing (a manual Run and the scheduler) cannot both claim the slot.
+    racing (two browser tabs, or a tab and the API) cannot both claim the slot.
     """
     with _connect() as conn:
         cur = conn.execute(
@@ -393,25 +387,8 @@ def get_running_batch():
 
 def get_batch_state():
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT watermark, schedule_enabled, schedule_minutes, last_scheduled_at "
-            "FROM batch_state WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT watermark FROM batch_state WHERE id = 1").fetchone()
     return dict(row) if row else {}
-
-
-def set_batch_state(**updates):
-    """Update the single batch_state row; unrecognised keys are ignored."""
-    allowed = ("watermark", "schedule_enabled", "schedule_minutes", "last_scheduled_at")
-    fields = {k: v for k, v in updates.items() if k in allowed}
-    if fields:
-        assignments = ", ".join("%s = ?" % k for k in fields)
-        with _connect() as conn:
-            conn.execute(
-                "UPDATE batch_state SET %s WHERE id = 1" % assignments,
-                list(fields.values()),
-            )
-    return get_batch_state()
 
 
 def advance_watermark(ts_to):

@@ -609,21 +609,6 @@
     <div class="hint">A batch is a time period you can inspect — statistics, abnormal readings, every raw reading, alert events — and process into Hive on its own. Spark's own job UI is at <b>localhost:4040</b>: open it <i>before</i> pressing Process, since it only lives as long as the job runs.</div>
 
     <div id="batch-list"></div>
-
-    <div class="hist-controls" style="margin-top:16px;border-top:1px solid var(--hairline);padding-top:14px;">
-      <div class="field">
-        <label for="batch-sched">Automatic (all data)</label>
-        <select id="batch-sched">
-          <option value="0">Off</option>
-          <option value="30">Every 30 minutes</option>
-          <option value="60">Hourly</option>
-          <option value="360">Every 6 hours</option>
-          <option value="1440">Daily</option>
-        </select>
-      </div>
-      <button class="btn btn-ghost" id="batch-rebuild">Rebuild all</button>
-    </div>
-    <div class="hist-summary" id="batch-watermark">Loading batch state…</div>
   </section>
 
   <!-- Reports computed by Spark and read back from Hive. Hidden until a batch
@@ -1269,8 +1254,12 @@
     var running = d.running;
     var lastRun = (d.batches || [])[0];
 
-    var index = stages.indexOf(current);
-    var failed = !running && lastRun && lastRun.status === "failed";
+    // the strip reports a run, so with nothing running it is only lit if this
+    // page is the one that started the last run — otherwise a page load would
+    // paint every stage green from the server's leftover progress
+    var live = running || batch.userStarted;
+    var index = live ? stages.indexOf(current) : -1;
+    var failed = live && !running && lastRun && lastRun.status === "failed";
 
     document.getElementById("pipe-stages").innerHTML = stages.map(function (s, i) {
       var cls = "pipe-stage";
@@ -1305,7 +1294,6 @@
   function renderBatch(d) {
     var wasRunning = batch.running;
     var running = d.running;
-    var sched = d.schedule || {};
     batchInfo = d;
     batch.running = !!running;
     renderPipeline(d);
@@ -1319,32 +1307,6 @@
       phase.textContent = "IDLE";
     }
 
-    var parts = ["watermark <b>" + (d.watermark ? escapeHtml(fmtDateLocal(d.watermark))
-      : "— (not set yet)") + "</b>"];
-    if (running) {
-      parts.push("running <b>#" + running.batch_id + "</b> since " +
-        escapeHtml(fmtDateLocal(running.started_at)));
-    }
-    parts.push("automatic <b>" + (sched.enabled ? "every " + sched.minutes + " min" : "off") + "</b>");
-    if (sched.enabled && sched.next_run) {
-      parts.push("next <b>" + escapeHtml(fmtDateLocal(sched.next_run)) + "</b>");
-    }
-    document.getElementById("batch-watermark").innerHTML = parts.join(" &nbsp;|&nbsp; ");
-
-    var sel = document.getElementById("batch-sched");
-    var want = sched.enabled ? String(sched.minutes) : "0";
-    if (sel.value !== want) {
-      var known = Array.prototype.some.call(sel.options, function (o) { return o.value === want; });
-      if (!known) {
-        var opt = document.createElement("option");
-        opt.value = want;
-        opt.textContent = "Every " + sched.minutes + " minutes";
-        sel.appendChild(opt);
-      }
-      sel.value = want;
-    }
-
-    document.getElementById("batch-rebuild").disabled = !!running;
     Array.prototype.forEach.call(document.querySelectorAll('#batch-list [data-act="process"]'),
       function (b) { b.disabled = !!running; });
     pollBatchWhileRunning();
@@ -1358,7 +1320,7 @@
         // refresh whichever report is on screen
         if (report.current) loadReport(report.current);
         // only a run the user started from this page reveals the panel, so a
-        // scheduled batch cannot pop it up on its own
+        // run begun elsewhere (another tab, the API) cannot pop it up here
         if (batch.userStarted) revealReports();
       } else {
         toast("Processing failed: " + (last.error || "unknown error"), "err");
@@ -1474,13 +1436,14 @@
     var st = stateOf(id);
     var url;
     if (st.tab === "readings") {
-      url = "/api/batch/windows/" + id + "/readings?limit=" + PAGE + "&offset=" + (st.offset || 0);
+      // a range query filters the readings rather than opening a separate view
+      url = st.filtered
+        ? outliersURL(id, st.q)
+        : "/api/batch/windows/" + id + "/readings?limit=" + PAGE + "&offset=" + (st.offset || 0);
     } else if (st.tab === "alerts") {
       url = "/api/batch/windows/" + id + "/alerts?limit=100";
     } else {
-      url = st.kind === "custom"
-        ? outliersURL(id, st.q)
-        : "/api/batch/windows/" + id + "/outliers";
+      url = "/api/batch/windows/" + id + "/outliers";
     }
     bodyEl(id).innerHTML = '<div class="hist-summary">Loading…</div>';
     fetch(url, { cache: "no-store" })
@@ -1501,13 +1464,33 @@
     var host = bodyEl(id);
     if (!st || !st.rows || !host) return;
     if (st.tab === "alerts") host.innerHTML = alertsTable(st.rows, st.total);
-    else if (st.tab === "readings") host.innerHTML = readingsTable(st.rows) + pagerHTML(st);
-    else host.innerHTML = outliersTable(st.rows, st.bounds, st.total);
+    else if (st.tab === "readings") {
+      host.innerHTML = st.filtered
+        ? outliersTable(st.rows, st.bounds, st.total)
+        : readingsTable(st.rows) + pagerHTML(st);
+    } else host.innerHTML = outliersTable(st.rows, st.bounds, st.total);
+  }
+
+  /* Spells out the box a result is "outside of", so a filtered list explains
+     itself wherever it is shown. */
+  function boundsLabel(b) {
+    if (!b) return "the range";
+    var bits = [];
+    if (b.t_min != null || b.t_max != null) {
+      bits.push("<b>" + (b.t_min != null ? b.t_min : "any") + "</b>&ndash;<b>" +
+        (b.t_max != null ? b.t_max : "any") + "</b> &deg;C");
+    }
+    if (b.h_min != null || b.h_max != null) {
+      bits.push("<b>" + (b.h_min != null ? b.h_min : "any") + "</b>&ndash;<b>" +
+        (b.h_max != null ? b.h_max : "any") + "</b> %RH");
+    }
+    return bits.length ? bits.join(" and ") : "the range";
   }
 
   function outliersTable(rows, bounds, total) {
+    var of = boundsLabel(bounds);
     if (!rows.length) {
-      return '<div class="hist-summary">Nothing outside that range in this period.</div>';
+      return '<div class="hist-summary">Nothing outside ' + of + " in this period.</div>";
     }
     var body = rows.map(function (r) {
       return "<tr><td>" + escapeHtml(r.ts) + "</td><td>" + escapeHtml(r.sensor_id) + "</td>" +
@@ -1516,7 +1499,7 @@
         "<td>" + escapeHtml(outlierReason(r, bounds)) + "</td></tr>";
     }).join("");
     return '<div class="hist-summary"><b>' + total.toLocaleString() +
-      "</b> readings outside the range" +
+      "</b> readings outside " + of +
       (rows.length < total ? " (showing the newest " + rows.length + ")" : "") + "</div>" +
       '<div class="hist-wrap" style="max-height:260px;">' +
       '<table class="hist-table batch-table"><thead><tr><th>Time (UTC)</th><th>Sensor</th>' +
@@ -1584,6 +1567,7 @@
   function switchTab(id, btn) {
     var st = stateOf(id);
     st.tab = btn.getAttribute("data-tab");
+    st.filtered = false;          // picking a tab by hand means the plain view
     st.offset = 0;
     setActiveTab(id, st.tab);
     fetchCard(id);
@@ -1591,19 +1575,21 @@
 
   function showAbnormal(id) {
     var st = stateOf(id);
+    st.filtered = false;
     st.tab = "abnormal";
-    st.kind = "thresholds";
     st.offset = 0;
     setActiveTab(id, "abnormal");
     fetchCard(id);
   }
 
+  /* A range query is really a filter on the readings, so its result lands in the
+     Readings tab where readings already are — the view does not jump elsewhere. */
   function showRange(id) {
     var st = stateOf(id);
-    st.tab = "abnormal";
-    st.kind = "custom";
+    st.filtered = true;
+    st.tab = "readings";
     st.offset = 0;
-    setActiveTab(id, "abnormal");
+    setActiveTab(id, "readings");
     fetchCard(id);
   }
 
@@ -1672,22 +1658,6 @@
       .catch(function () { toast("Could not reach the backend", "err"); });
   }
 
-  function startRebuild() {
-    fetch("/api/batch/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full: true })
-    })
-      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
-      .then(function (res) {
-        if (res.status === 409) toast("A batch is already running", "err");
-        else if (res.status >= 400) toast(res.data.error || "Could not start", "err");
-        else toast("Rebuilding every partition", "ok");
-        loadBatch();
-      })
-      .catch(function () { toast("Could not reach the backend", "err"); });
-  }
-
   function applyPreset() {
     var v = document.getElementById("new-preset").value;
     if (v === "custom") return;
@@ -1711,28 +1681,6 @@
       document.getElementById(id).addEventListener("input", function () {
         document.getElementById("new-preset").value = "custom";
       });
-    });
-
-    document.getElementById("batch-rebuild").addEventListener("click", function () {
-      if (!window.confirm("Rebuild every day partition from the full history?")) return;
-      startRebuild();
-    });
-
-    document.getElementById("batch-sched").addEventListener("change", function () {
-      var minutes = parseInt(this.value, 10) || 0;
-      fetch("/api/batch/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: minutes > 0, minutes: minutes })
-      })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (d) {
-          toast(d.schedule.enabled
-            ? ("Automatic batch every " + d.schedule.minutes + " min")
-            : "Automatic batch off", "ok");
-          loadBatch();
-        })
-        .catch(function () { toast("Could not change the schedule", "err"); });
     });
 
     // one delegated handler for the whole list, so it survives every re-render
@@ -1992,7 +1940,7 @@
   loadBatch();
   loadWindows(true);
   setInterval(loadLatest, POLL_MS);
-  // keeps the cards honest about batches the scheduler started on its own
+  // keeps the cards honest about a run started from another tab
   setInterval(function () { loadBatch(); loadWindows(); }, 30000);
 
   (function () {
